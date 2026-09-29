@@ -1,23 +1,22 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
-/* Result code recorded for a request, matching the log format's "+OK"/"-ERR". */
-typedef enum {
-    LOG_OK,
-    LOG_ERR
-} LogStatus;
+#include <stdbool.h>
 
-/*
- * Appends one entry to the log file at `log_path`, in the required format:
- *   [dd/mm/yyyy hh:mm:ss] $ <function> $ <value> $ <+OK|-ERR>
+/**
+ * @function writeLog: Ghi 1 dòng log vào file, theo định dạng:
+ *           [dd/mm/yyyy hh:mm:ss] $ function $ value $ +OK/-ERR
  *
- * `function` is the selected menu option (1-4). `value` is the raw input
- * the user provided for that request ("" if the request takes no input,
- * e.g. logout or exit).
+ * @param logPath: Đường dẫn file log (VD "log_20235994.txt").
+ * @param function: Số hiệu chức năng được chọn (1-4).
+ * @param value: Giá trị người dùng nhập cho chức năng đó
+ *        (chuỗi rỗng "" nếu chức năng không có input, VD logout/exit).
+ * @param success: true nếu chức năng thực hiện thành công (+OK),
+ *        false nếu thất bại (-ERR).
  *
- * Returns 0 on success. Returns -1 if the log file could not be opened
- * for writing (the caller is responsible for reporting the I/O error).
+ * @return: 0 nếu ghi log thành công.
+ *          1 nếu không mở được file log (lỗi I/O).
  */
-int logger_write(const char *log_path, int function, const char *value, LogStatus status);
+int writeLog(const char *logPath, int function, const char *value, bool success);
 
-#endif /* LOGGER_H */
+#endif

@@ -1,16 +1,13 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-/*
- * Reads one line from stdin into a newly heap-allocated, NUL-terminated
- * string with the trailing newline (and '\r', if present) stripped.
- * The caller owns the returned string and must free() it.
+/**
+ * @function readLine: Đọc một dòng input từ bàn phím (stdin), loại bỏ
+ *           ký tự xuống dòng ở cuối.
  *
- * Using a dynamically grown buffer (instead of a fixed-size char array)
- * means input of any length is accepted safely, with no risk of overflow.
- *
- * Returns NULL on EOF or if reading/allocating fails.
+ * @return: Con trỏ tới chuỗi vừa đọc được, đã được cấp phát động bằng
+ *          malloc, trả về NULL nếu gặp lỗi đọc hoặc EOF (VD người dùng nhấn Ctrl+D).
  */
-char *read_line(void);
+char *readLine(void);
 
-#endif /* UTIL_H */
+#endif

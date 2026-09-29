@@ -1,23 +1,21 @@
 #include "session.h"
-
 #include <stddef.h>
 
-void session_init(Session *session) {
-    session->current = NULL;
+
+static const Account *currentUser = NULL;
+
+bool isLoggedIn(void){
+    return currentUser != NULL;
 }
 
-int session_is_logged_in(const Session *session) {
-    return session->current != NULL;
+void login(const Account *account){
+    currentUser = account;
 }
 
-void session_login(Session *session, const Account *account) {
-    session->current = account;
+void logout(void){
+    currentUser = NULL;
 }
 
-void session_logout(Session *session) {
-    session->current = NULL;
-}
-
-const char *session_username(const Session *session) {
-    return session->current ? session->current->username : NULL;
+const char *getCurrentUsername(void){
+    return currentUser ? currentUser->username : NULL;
 }

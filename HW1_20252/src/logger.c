@@ -1,32 +1,31 @@
-/* Needed for localtime_r(), which is a POSIX extension, not plain C11. */
+/* Cần cho setenv()/tzset() (hàm POSIX), không có sẵn dưới -std=c11 nếu
+ * thiếu macro này. Phải đặt trước MỌI #include. */
 #define _POSIX_C_SOURCE 200809L
 
 #include "logger.h"
-
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
-int logger_write(const char *log_path, int function, const char *value, LogStatus status) {
-    /* Opened and closed on every call (instead of kept open for the whole
-     * program) so a partially written entry is never left behind if the
-     * program exits unexpectedly, and so the write failure is always
-     * detected right when it happens. */
-    FILE *fp = fopen(log_path, "a");
-    if (!fp) {
-        return -1;
+int writeLog(const char *logPath, int function, const char *value, bool success){
+    FILE *fptr = fopen(logPath, "a");
+    if (fptr == NULL){
+        return 1;
     }
 
+    /* Ép cứng múi giờ Việt Nam, không phụ thuộc múi giờ cấu hình của máy
+     * đang chạy chương trình (VD máy chấm bài có thể đặt UTC). */
+    setenv("TZ", "Asia/Ho_Chi_Minh", 1);
+    tzset();
+
     time_t now = time(NULL);
-    struct tm local_time;
-    localtime_r(&now, &local_time); /* thread-safe alternative to localtime() */
+    struct tm *localTime = localtime(&now);
 
-    char timestamp[20]; /* "dd/mm/yyyy hh:mm:ss" + '\0' = 20 bytes */
-    strftime(timestamp, sizeof(timestamp), "%d/%m/%Y %H:%M:%S", &local_time);
+    char timestamp[20]; 
+    strftime(timestamp, sizeof(timestamp), "%d/%m/%Y %H:%M:%S", localTime);
 
-    const char *code = (status == LOG_OK) ? "+OK" : "-ERR";
+    fprintf(fptr, "[%s] $ %d $ %s $ %s\n", timestamp, function, value, success ? "+OK" : "-ERR");
 
-    fprintf(fp, "[%s] $ %d $ %s $ %s\n", timestamp, function, value, code);
-
-    fclose(fp);
+    fclose(fptr);
     return 0;
 }
