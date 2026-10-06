@@ -18,7 +18,8 @@ int forwardLookup(const char *domain, StringList *result);
 
 /**
  * @function reverseLookup: Resolve an IPv4 address to every domain name
- *           mapped to it (official name plus aliases).
+ *           mapped to it: every PTR record from DNS, or the entry from
+ *           local sources (e.g. /etc/hosts) if DNS has none.
  *
  * @param ip: A valid dotted-decimal IPv4 address (see isValidIPv4).
  * @param result: Output list, filled with domain names without duplicates.
