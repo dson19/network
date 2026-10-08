@@ -1,5 +1,0 @@
-[08/10/2026 13:22:18]$   localhost   $-Not found information
-[08/10/2026 13:27:57]$localhost$+127.0.0.1
-[08/10/2026 13:28:03]$127.0.0.1$+kubernetes.docker.internal
-[08/10/2026 13:28:14]$5giay.vn$+210.211.109.164
-[08/10/2026 13:28:17]$messi$-Not found information
