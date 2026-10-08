@@ -1,5 +1,4 @@
 #include "util.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,16 +44,4 @@ void freeStringList(StringList *list){
     }
     free(list->items);
     initStringList(list);
-}
-
-void printResult(const StringList *list){
-    if (list == NULL || list->count == 0){
-        printf("Not found information\n");
-        return;
-    }
-
-    printf("Result:\n");
-    for (int i = 0; i < list->count; i++){
-        printf("%s\n", list->items[i]);
-    }
 }

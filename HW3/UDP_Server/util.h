@@ -34,13 +34,4 @@ int addUniqueString(StringList *list, const char *value);
  */
 void freeStringList(StringList *list);
 
-/**
- * @function printResult: Print the lookup outcome to stdout.
- *           "Result:" followed by one item per line, or
- *           "Not found information" if the list is empty.
- *
- * @param list: The lookup results.
- */
-void printResult(const StringList *list);
-
 #endif
