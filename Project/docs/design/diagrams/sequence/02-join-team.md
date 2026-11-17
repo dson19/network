@@ -7,7 +7,6 @@ sequenceDiagram
     autonumber
     participant X as Client người xin
     participant S as Server
-    participant P as Thread pool
     participant K as Client đội trưởng
     participant M as Client thành viên khác
 
@@ -18,8 +17,7 @@ sequenceDiagram
 
     K->>S: {id:12, cmd:TEAM_JOIN_REPLY, username:X, accept:true}
     S->>S: gán X vào slot trống nhỏ nhất, hủy các lời xin/mời khác của X
-    S->>P: job INSERT team_member
-    P-->>S: OK
+    Note over S: Đội là party trong RAM, không ghi DB
     S-->>K: {res, id:12, code:1000}
     S->>X: {evt:JOIN_RESULT, data:{team_id:5, accepted:true}}
     par gửi cho cả đội

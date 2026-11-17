@@ -1,0 +1,493 @@
+% Báo cáo thiết kế - Trò chơi "Phi đội không gian"
+% Biên dịch: pdflatex report.tex (chạy 2 lần để có mục lục)
+% Ảnh sơ đồ: thư mục images/ cạnh file .tex (Overleaf) hoặc ../design/diagrams/images/ (repo).
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{images/}{../design/diagrams/images/}}
+\setlist{itemsep=1pt,topsep=3pt}
+\setlength{\parskip}{4pt}
+\renewcommand{\arraystretch}{1.15}
+
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, frame=single,
+        breaklines=true, keepspaces=true, backgroundcolor=\color{gray!6}}
+
+\newcommand{\cmd}[1]{\texttt{#1}}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+% Ô ví dụ message: chữ máy nhỏ, xuống dòng thủ công bằng \newline.
+\newcolumntype{E}[1]{>{\raggedright\arraybackslash\ttfamily\footnotesize}p{#1}}
+% Gạch đầu dòng gọn trong ô bảng.
+\newcommand{\bul}{\textbullet~}
+
+% Chèn sơ đồ; nếu chưa render ảnh thì hiện khung báo thiếu thay vì lỗi biên dịch.
+\newcommand{\diagram}[3]{%
+  \begin{figure}[H]\centering
+  \IfFileExists{images/#1.png}%
+    {\includegraphics[width=#3\linewidth]{images/#1.png}}%
+    {\IfFileExists{../design/diagrams/images/#1.png}%
+      {\includegraphics[width=#3\linewidth]{../design/diagrams/images/#1.png}}%
+      {\fbox{\parbox{0.8\linewidth}{\centering\small Chưa có ảnh \texttt{#1.png}.\\
+         Chạy \texttt{python3 -I Project/tools/render\_diagrams.py} để render.}}}}%
+  \caption{#2}\label{fig:#1}
+  \end{figure}}
+
+\title{\textbf{BÁO CÁO THIẾT KẾ}\\[4pt]
+       \large Ứng dụng trò chơi ``Phi đội không gian''\\[2pt]
+       \normalsize Môn Lập trình mạng -- IT4062}
+\author{Đặng Hoàng Sơn -- 20235994\\ Ngô Đức Huy -- 20235946}
+
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{Giới thiệu}
+
+\textbf{Đề tài.} Xây dựng trò chơi nhiều người chơi theo mô hình client--server trên TCP. Người chơi lập đội tối đa 3 người, thách đấu đội khác và điều khiển phi thuyền tấn công đối phương. Đội nào bị hạ hết phi thuyền trước thì thua. Coin để mua trang bị kiếm được bằng cách trả lời câu hỏi trắc nghiệm trong các rương kho báu.
+
+\textbf{Mục tiêu thiết kế.}
+\begin{itemize}
+  \item Đáp ứng đầy đủ 23 chức năng của barem (39 điểm).
+  \item Server chịu được nhiều kết nối và nhiều trận chạy cùng lúc.
+  \item Server là bên quyết định duy nhất: client không tự tính luật chơi.
+  \item Biên dịch và chạy được trên Ubuntu 20.04, GCC 9.4, chuẩn \cmd{-std=c11}.
+\end{itemize}
+
+\textbf{Công nghệ.} C11; TCP socket; \cmd{epoll} và \cmd{pthread} (server); GTK3 (client); SQLite 3.31; OpenSSL (PBKDF2); cJSON.
+
+% =====================================================================
+\section{Đặc tả trò chơi}
+
+\subsection{Đội và trận đấu}
+\begin{itemize}
+  \item Đội hoạt động như \emph{party} khi ghép trận: chỉ tồn tại trong RAM của server, gồm những người đang online. Mỗi đội có 3 slot cố định (0, 1, 2), tối đa 3 người.
+  \item Thành viên mất kết nối khi đội không ở trong trận thì tự rời đội. Mất kết nối trong trận thì vẫn ở trong đội tới hết trận để còn vào lại được. Chỉ mời được người đang online.
+  \item Hết trận, đội quay về room với các thành viên còn online, giữ nguyên đội trưởng, và thách đấu tiếp được ngay.
+  \item Chỉ 2 đội cùng số người mới thách đấu được nhau. Đội đang ở sảnh chờ hoặc trong trận thì bị khóa mọi thao tác đội, kể cả với admin.
+  \item Trong sảnh chờ, đội trưởng đội chủ (người tạo phòng) chỉnh thời gian lượt (mặc định 30 giây), thời gian rương (30 giây) và coin ban đầu (0). Đội khách sẵn sàng thì đội chủ mới bắt đầu được.
+  \item Mỗi trận reset toàn bộ: coin, trang bị, HP, đạn. Coin tính riêng từng người.
+\end{itemize}
+
+\subsection{Tàu, vũ khí và giáp}
+Tàu khởi đầu có HP 1000, Amor 0 và 1 pháo tự động với 50 viên đạn.
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}l l l L@{}}
+\toprule
+\textbf{Trang bị} & \textbf{Giá (coin)} & \textbf{Thông số} & \textbf{Ghi chú} \\
+\midrule
+Pháo tự động & có sẵn & Damage 10/viên & Đúng 1 khẩu, không bỏ, không mua thêm. Thùng đạn 100 coin/50 viên \\
+Pháo laze & 1000/khẩu & Damage 100/phát & Tối đa 3 khẩu (pháo tự động chiếm 1 trong 4 slot). Bộ nguồn 100 coin/10 phát \\
+Tên lửa & 2000/quả & Damage 800 & Dùng 1 lần, không chiếm slot pháo, mang tối đa 4 quả \\
+Giáp cơ bản & 1000 & Amor 500 & Tối đa 2 lớp, cộng dồn \\
+Giáp tăng cường & 2000 & Amor 1500 & Lớp mua sau bị trừ trước \\
+Sửa tàu & 1/HP & -- & Tối đa 1000 HP; tàu đã chết không sửa được \\
+\bottomrule
+\end{tabularx}
+\caption{Bảng trang bị}
+\end{table}
+
+\begin{itemize}
+  \item \textbf{Đạn:} mỗi khẩu có băng riêng; kho thùng đạn và bộ nguồn dùng chung cho cùng loại. Reload làm được bất cứ lúc nào, mỗi lần lấy 1 thùng hoặc 1 bộ, số đạn còn trong băng cũ bị bỏ. Băng hết thì tự reload nếu kho còn.
+  \item \textbf{Giáp:} đang đủ 2 lớp mà mua thêm thì lớp còn ít Amor hơn bị bỏ. Lớp về 0 Amor thì bị gỡ.
+  \item \textbf{Sát thương:} mỗi điểm Damage trừ 1 Amor, bắt đầu từ lớp ngoài; phần dư trừ vào HP. HP về 0 thì tàu bị hạ, không hồi sinh.
+  \item \textbf{Tấn công:} chọn 1 mục tiêu, sau đó chọn phần pháo (chỉ 1 loại: tự động hoặc laze, chọn số khẩu), phần tên lửa (chọn số quả), hoặc cả hai. Không được trộn 2 loại pháo.
+\end{itemize}
+
+\subsection{Lượt và rương kho báu}
+\begin{itemize}
+  \item Thứ tự lượt A0 $\rightarrow$ B0 $\rightarrow$ A1 $\rightarrow$ B1 $\rightarrow$ A2 $\rightarrow$ B2, bỏ qua tàu đã chết. Trong lượt của mình: mua, sửa, reload, mở rương; bấm tấn công là hết lượt. Ngoài lượt chỉ được reload.
+  \item Hết giờ lượt hoặc mất kết nối thì bị bỏ qua lượt.
+  \item Mỗi lượt server thả 1 rương: đồng 60\% (100 coin), bạc 30\% (500), vàng 10\% (2000). Mở rương là không bắt buộc.
+  \item Mở rương thì đồng hồ lượt tạm dừng và rương có đồng hồ riêng. Trong lúc đó chỉ được trả lời. Câu hỏi trắc nghiệm, trả lời 1 lần: đúng thì nhận coin, sai thì mất rương. Đồng đội chỉ được xem câu hỏi; đối phương không thấy.
+  \item Đội bị hạ hết tàu thì thua. Cả đội offline liên tục 120 giây thì thua do bỏ cuộc.
+\end{itemize}
+
+% =====================================================================
+\section{Kiến trúc hệ thống}
+
+\subsection{Mô hình server: 1 luồng chính epoll + thread pool}
+\begin{itemize}
+  \item \textbf{Luồng chính} chạy \cmd{epoll\_wait}, nhận/gửi trên mọi socket non-blocking, và là luồng \emph{duy nhất} được đọc/sửa state (phiên, đội, sảnh chờ, trận, đồng hồ).
+  \item \textbf{Thread pool} chỉ làm việc chậm: hash mật khẩu, đọc SQLite, đọc file log. \textbf{1 luồng DB writer} ghi DB và ghi log theo đúng thứ tự FIFO. Kết quả được trả về luồng chính qua hàng đợi và \cmd{eventfd}.
+  \item \textbf{Đồng hồ} lượt, rương, idle, bỏ cuộc nằm trong một min-heap; mốc gần nhất làm timeout của \cmd{epoll\_wait}. Không dùng \cmd{sleep} hay luồng timer riêng.
+\end{itemize}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}l L L L@{}}
+\toprule
+\textbf{Tiêu chí} & \textbf{epoll + pool (chọn)} & \textbf{1 luồng/client} & \textbf{1 luồng + poll} \\
+\midrule
+Số kết nối & Hàng chục nghìn & Vài nghìn luồng là nặng & Quét O(n) mỗi lần \\
+Race trên state & Không có & Phải khóa mutex khắp nơi & Không có \\
+Việc chậm & Đẩy sang pool & Mỗi client tự chịu & Chặn cả server \\
+Đồng hồ & Timeout của epoll & Cần luồng timer & Timeout của poll \\
+\bottomrule
+\end{tabularx}
+\caption{So sánh các mô hình server}
+\end{table}
+
+\subsection{Các quyết định thiết kế khác}
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+\toprule
+\textbf{Vấn đề} & \textbf{Lựa chọn} \\
+\midrule
+Định dạng message & JSON (thư viện cJSON) \\
+Truyền dòng & Mỗi message 1 dòng JSON, kết thúc bằng \cmd{\textbackslash r\textbackslash n} \\
+Đồng bộ client & Event kèm snapshot toàn bộ trạng thái trận \\
+Client & Socket gắn vào main loop của GTK, 1 luồng \\
+Lưu trữ & SQLite, chế độ WAL \\
+\bottomrule
+\end{tabularx}
+\caption{Các quyết định kiến trúc}
+\end{table}
+
+\subsection{Lưu trữ}
+\begin{itemize}
+  \item SQLite chỉ có 2 bảng: \cmd{users} (tên đăng nhập, hash PBKDF2 kèm salt, role, trạng thái khóa) và \cmd{questions} (tier, câu hỏi, 4 lựa chọn, đáp án). Đội (party), phiên, sảnh chờ và trận đang chơi chỉ nằm trong RAM; kết quả trận được ghi vào log.
+  \item Lúc khởi động, server nạp tài khoản (trừ hash mật khẩu) và câu hỏi lên RAM; luồng chính chỉ đọc từ RAM. Ghi theo kiểu \emph{RAM trước, DB sau} qua 1 luồng DB writer chạy FIFO, nên luồng chính không bao giờ chờ ổ đĩa. Riêng \cmd{REGISTER} phải chờ DB cấp \cmd{id}.
+  \item Admin đầu tiên được tạo trên máy server bằng \cmd{./server --create-admin <username>}; câu hỏi soạn sẵn nạp từ \cmd{data/questions.txt}.
+\end{itemize}
+
+% =====================================================================
+\section{Giao thức}
+
+\subsection{Đóng gói và cấu trúc message}
+Mỗi message là 1 object JSON UTF-8 trên 1 dòng, kết thúc bằng \cmd{\textbackslash r\textbackslash n}, tối đa 8192 byte. Có 3 loại message:
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}P{0.15\linewidth} P{0.2\linewidth} L E{0.33\linewidth}@{}}
+\toprule
+\textbf{Loại} & \textbf{Trường} & \textbf{Ý nghĩa} & \normalfont\small\textbf{Ví dụ message} \\
+\midrule
+Request \newline (C$\rightarrow$S) & \cmd{id}, \cmd{cmd}, tham số & \cmd{id} tự tăng theo kết nối, dùng để ghép response &
+\{"id":40,"cmd":"ATTACK",\newline "target":"minh",\newline "gun":\{"type":"LASER",\newline \ \ "count":2\},\newline "missiles":1\} \\
+\midrule
+Response \newline (S$\rightarrow$C) & \cmd{type}, \cmd{id}, \cmd{code}, \cmd{msg}, \cmd{data} & Đúng 1 response cho mỗi request; \cmd{1000} là thành công &
+\{"type":"res","id":40,\newline "code":1000,"msg":"OK"\} \\
+\midrule
+Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server tự gửi; event trong trận kèm \cmd{state} &
+\{"type":"evt",\newline "evt":"ATTACK",\newline "data":\{"attacker":"son",\newline \ \ "target":"minh",\newline \ \ "damage":1000,...\}\} \\
+\bottomrule
+\end{tabularx}
+\caption{Ba loại message}
+\end{table}
+
+\subsection{Mã kết quả}
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}l l L@{}}
+\toprule
+\textbf{Nhóm} & \textbf{Khoảng} & \textbf{Ví dụ} \\
+\midrule
+Thành công & 1000 & OK \\
+Định dạng & 2001--2004 & JSON hỏng, lệnh không tồn tại, thiếu tham số, message quá dài \\
+Tài khoản, phiên & 3001--3007 & Chưa đăng nhập, sai mật khẩu, tài khoản bị khóa, trùng tên \\
+Phân quyền & 4001--4003 & Không đủ quyền, không phải đội trưởng, không phải admin \\
+Đội & 5001--5011 & Đội đầy, đã có đội, đội đang trong trận, người được mời đang offline \\
+Thách đấu, sảnh chờ & 6001--6008 & Lệch số người, đội khách chưa sẵn sàng, setting sai \\
+Trong trận & 7001--7013 & Chưa tới lượt, thiếu coin, hết slot, trộn pháo, đang mở rương \\
+Server & 9001--9002 & Lỗi nội bộ hoặc chế độ chỉ đọc, server quá tải \\
+\bottomrule
+\end{tabularx}
+\caption{Các nhóm mã kết quả}
+\end{table}
+
+\subsection{Lệnh và event}
+\begin{longtable}{@{}p{0.2\linewidth} p{0.75\linewidth}@{}}
+\toprule
+\textbf{Nhóm} & \textbf{Lệnh (client $\rightarrow$ server)} \\
+\midrule\endhead
+Chung & \cmd{PING} \\
+Tài khoản & \cmd{REGISTER}, \cmd{LOGIN}, \cmd{LOGOUT}, \cmd{WHOAMI}, \cmd{CHANGE\_PASSWORD} \\
+Đội & \cmd{TEAM\_CREATE}, \cmd{TEAM\_DELETE}, \cmd{TEAM\_LIST}, \cmd{TEAM\_MEMBERS}, \cmd{TEAM\_JOIN\_REQUEST}, \cmd{TEAM\_JOIN\_LIST}, \cmd{TEAM\_JOIN\_REPLY}, \cmd{TEAM\_INVITE}, \cmd{TEAM\_INVITE\_LIST}, \cmd{TEAM\_INVITE\_REPLY}, \cmd{TEAM\_LEAVE}, \cmd{TEAM\_KICK}, \cmd{TEAM\_TRANSFER} \\
+Thách đấu & \cmd{CHALLENGE\_SEND}, \cmd{CHALLENGE\_LIST}, \cmd{CHALLENGE\_REPLY}, \cmd{CHALLENGE\_CANCEL}, \cmd{LOBBY\_SETTINGS}, \cmd{LOBBY\_READY}, \cmd{LOBBY\_START}, \cmd{LOBBY\_LEAVE} \\
+Trong trận & \cmd{GAME\_STATE}, \cmd{BUY}, \cmd{REPAIR}, \cmd{RELOAD}, \cmd{CHEST\_OPEN}, \cmd{CHEST\_ANSWER}, \cmd{ATTACK} \\
+Admin & \cmd{ADMIN\_USER\_LIST}, \cmd{ADMIN\_LOCK}, \cmd{ADMIN\_LOG}, \cmd{ADMIN\_QUESTION\_LIST}, \cmd{ADMIN\_QUESTION\_ADD}, \cmd{ADMIN\_QUESTION\_DELETE} \\
+\midrule
+\textbf{Nhóm} & \textbf{Event (server $\rightarrow$ client)} \\
+\midrule
+Phiên & \cmd{FORCE\_LOGOUT} (khóa, thay thế phiên, server tắt) \\
+Đội & \cmd{JOIN\_REQUEST}, \cmd{JOIN\_RESULT}, \cmd{INVITE}, \cmd{INVITE\_RESULT}, \cmd{TEAM\_UPDATE}, \cmd{KICKED}, \cmd{TEAM\_DELETED} \\
+Sảnh chờ & \cmd{CHALLENGE}, \cmd{CHALLENGE\_RESULT}, \cmd{CHALLENGE\_CANCELLED}, \cmd{LOBBY\_UPDATE}, \cmd{LOBBY\_CLOSED} \\
+Trận & \cmd{MATCH\_START}, \cmd{MATCH\_RESUME}, \cmd{TURN\_START}, \cmd{CHEST\_DROP}, \cmd{CHEST\_QUESTION}, \cmd{CHEST\_RESULT}, \cmd{PURCHASE}, \cmd{REPAIR}, \cmd{RELOAD}, \cmd{ATTACK}, \cmd{TURN\_SKIPPED}, \cmd{PLAYER\_DISCONNECTED}, \cmd{PLAYER\_RECONNECTED}, \cmd{SHIP\_DESTROYED}, \cmd{MATCH\_END} \\
+\bottomrule
+\caption{Danh sách lệnh và event}
+\end{longtable}
+
+Snapshot trận được làm riêng cho từng người nhận: đội mình thấy đầy đủ; tàu đối phương chỉ hiện HP, giáp, số laze và số tên lửa, \emph{không} có coin và đạn.
+
+\subsection{Quy tắc chính của giao thức}
+\begin{enumerate}
+  \item Message quá 8192 byte: trả \cmd{2004} rồi đóng kết nối. JSON hỏng: trả \cmd{2001}, giữ kết nối. Trường thừa bị bỏ qua.
+  \item Request của cùng một kết nối được xử lý đúng thứ tự gửi; response của một request luôn đến trước các event do nó gây ra.
+  \item Kiểm tra theo thứ tự cố định: định dạng $\rightarrow$ đăng nhập $\rightarrow$ quyền $\rightarrow$ trạng thái $\rightarrow$ tham số. Lệnh bị từ chối không làm thay đổi gì. Lệnh nhiều phần xử lý kiểu tất cả hoặc không.
+  \item Mọi mốc hết hạn là thời điểm tuyệt đối theo đồng hồ server. Client tính độ lệch qua \cmd{PING}.
+  \item Client gửi \cmd{PING} mỗi 20 giây; server đóng kết nối im lặng quá 60 giây.
+  \item Mỗi tài khoản 1 phiên. Đăng nhập đúng mật khẩu ở nơi khác thì phiên cũ bị thay thế.
+  \item Mất kết nối giữa trận: tàu vẫn ở trong trận, lượt bị bỏ qua ngay; đăng nhập lại nhận \cmd{MATCH\_RESUME}.
+  \item Mất kết nối ngoài trận: tự rời đội; lời mời và lời xin vào của người đó bị hủy.
+  \item Buffer gửi mỗi kết nối tối đa 256 KB; hàng đợi việc đầy thì trả \cmd{9002}.
+\end{enumerate}
+
+% =====================================================================
+\section{Các luồng xử lý}
+
+Mỗi luồng dưới đây được mô tả gồm \textbf{các bước} diễn ra giữa client và server, và \textbf{mục đích thiết kế}: vì sao luồng được thiết kế theo cách đó. Bảng~\ref{tab:flows} liệt kê toàn bộ các luồng.
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+\toprule
+\textbf{Nhóm} & \textbf{Luồng} \\
+\midrule
+Thành công &
+\bul 01 Đăng nhập \newline
+\bul 02 Xin vào đội và được duyệt \newline
+\bul 03 Thách đấu, sảnh chờ, bắt đầu trận \newline
+\bul 04 Một lượt đầy đủ \newline
+\bul 05 Kết thúc trận \\
+\midrule
+Lỗi &
+\bul 10 Lỗi đăng nhập \newline
+\bul 11 Lỗi định dạng và lỗi chưa đăng nhập \newline
+\bul 12 Lỗi luật chơi trong trận \newline
+\bul 13 Lỗi phân quyền \\
+\midrule
+Timeout &
+\bul 20 Hết giờ lượt \newline
+\bul 21 Hết giờ rương \newline
+\bul 22 Kết nối im lặng quá lâu (idle timeout) \newline
+\bul 23 Cả đội offline quá lâu (bỏ cuộc) \\
+\midrule
+Kết nối lại &
+\bul 30 Mất kết nối giữa trận rồi vào lại \newline
+\bul 31 Phiên cũ chưa kịp đóng (thay thế phiên) \newline
+\bul 32 Mất kết nối ở sảnh chờ, khi đang mở rương, khi rảnh \\
+\bottomrule
+\end{tabularx}
+\caption{Danh sách các luồng}\label{tab:flows}
+\end{table}
+
+% ---------------------------------------------------------------------
+\subsection{Luồng thành công}
+
+\subsubsection{Đăng nhập}
+\textbf{Các bước:}
+\begin{enumerate}
+  \item Client gửi \cmd{LOGIN}. Luồng chính kiểm tra định dạng và kết nối chưa đăng nhập.
+  \item Luồng chính đẩy việc kiểm tra mật khẩu sang thread pool, chuyển kết nối sang \cmd{AUTH\_PENDING}, rồi quay lại phục vụ các kết nối khác. Các request tiếp theo của kết nối này phải chờ.
+  \item Worker đọc hash và salt từ SQLite, chạy PBKDF2, trả kết quả về luồng chính qua hàng đợi và \cmd{eventfd}.
+  \item Luồng chính tạo phiên (thay thế phiên cũ nếu tài khoản đang online ở nơi khác), trả \cmd{1000} kèm trạng thái người chơi. Nếu người chơi đang trong trận thì gửi thêm \cmd{MATCH\_RESUME}.
+\end{enumerate}
+\textbf{Mục đích thiết kế:}
+\begin{itemize}
+  \item PBKDF2 cố ý chạy chậm (50--100 ms) để chống dò mật khẩu. Đưa nó sang pool để luồng chính không bị chặn: 100 người đăng nhập cùng lúc không làm server đứng.
+  \item Bắt các request sau phải chờ để response luôn về đúng thứ tự request.
+  \item Sai username và sai mật khẩu trả cùng mã \cmd{3003} để không lộ tài khoản nào tồn tại.
+\end{itemize}
+
+\subsubsection{Xin vào đội và được duyệt}
+\textbf{Các bước:}
+\begin{enumerate}
+  \item Người chơi gửi \cmd{TEAM\_JOIN\_REQUEST}. Server lưu lời xin vào trong RAM và gửi event \cmd{JOIN\_REQUEST} cho đội trưởng.
+  \item Đội trưởng gửi \cmd{TEAM\_JOIN\_REPLY}. Server kiểm tra lại toàn bộ điều kiện, gán người chơi vào slot trống nhỏ nhất, hủy mọi lời xin vào và lời mời khác của người đó.
+  \item Server cập nhật RAM, trả \cmd{1000}, gửi \cmd{JOIN\_RESULT} cho người xin và \cmd{TEAM\_UPDATE} cho cả đội. Đội chỉ nằm trong RAM nên không ghi DB.
+\end{enumerate}
+Luồng mời vào đội (\cmd{TEAM\_INVITE} rồi \cmd{TEAM\_INVITE\_REPLY}) giống hệt nhưng đổi vai: đội trưởng mời, người được mời chấp nhận. Chỉ mời được người đang online.
+
+\textbf{Mục đích thiết kế:}
+\begin{itemize}
+  \item Kiểm tra lại lúc duyệt vì trong lúc chờ, đội có thể đã đủ người hoặc đã vào trận.
+  \item Hủy các lời treo khác để một người không thể vào 2 đội.
+  \item Event \cmd{TEAM\_UPDATE} giúp mọi thành viên thấy thay đổi ngay, không phải tự hỏi lại server.
+\end{itemize}
+
+\subsubsection{Thách đấu, sảnh chờ, bắt đầu trận}
+\textbf{Các bước:}
+\begin{enumerate}
+  \item Đội trưởng đội chủ gửi \cmd{CHALLENGE\_SEND}; server kiểm tra 2 đội cùng số người và đều rảnh, rồi gửi \cmd{CHALLENGE} cho đội trưởng đội khách.
+  \item Đội khách chấp nhận: server tạo sảnh chờ, chuyển 2 đội sang trạng thái sảnh chờ (bị khóa thao tác đội), hủy các lời thách đấu khác, gửi \cmd{LOBBY\_UPDATE} cho mọi thành viên.
+  \item Đội chủ chỉnh setting; mỗi lần chỉnh, trạng thái sẵn sàng của đội khách bị bỏ.
+  \item Đội khách bấm sẵn sàng, đội chủ bấm bắt đầu. Server tạo trận, gửi \cmd{MATCH\_START} và bắt đầu lượt đầu tiên.
+\end{enumerate}
+\textbf{Mục đích thiết kế:}
+\begin{itemize}
+  \item Sảnh chờ là nơi 2 đội thống nhất setting trước khi đánh.
+  \item Bỏ sẵn sàng khi đổi setting để đội khách luôn đồng ý với setting cuối cùng, tránh bị đổi luật phút chót.
+  \item Chỉ đội trưởng được gửi lệnh sảnh chờ để không có 2 người cùng ra quyết định cho một đội.
+\end{itemize}
+
+\subsubsection{Một lượt chơi}
+\textbf{Các bước:}
+\begin{enumerate}
+  \item Server chọn người tiếp theo, gửi \cmd{TURN\_START} kèm thời điểm hết lượt, và \cmd{CHEST\_DROP}.
+  \item Người chơi mua, sửa, reload theo thứ tự bất kỳ. Mỗi thay đổi được gửi thành event cho cả trận.
+  \item Nếu mở rương: đồng hồ lượt tạm dừng, server gửi câu hỏi cho người chơi (được trả lời) và đồng đội (chỉ xem). Trả lời xong thì đồng hồ lượt chạy tiếp với thời gian còn lại.
+  \item Người chơi gửi \cmd{ATTACK}. Server tính tổng damage, trừ giáp từ lớp ngoài vào, phần dư trừ HP, gửi event \cmd{ATTACK}, rồi chuyển lượt.
+\end{enumerate}
+\textbf{Mục đích thiết kế:}
+\begin{itemize}
+  \item Tạm dừng đồng hồ lượt khi mở rương để người chơi không bị mất thời gian hành động vì trả lời câu hỏi.
+  \item Mỗi event kèm snapshot đã lọc theo người nhận: client luôn vẽ đúng trạng thái, còn coin, đạn của đối phương và câu hỏi rương được giấu đúng người.
+  \item Tấn công là hành động kết thúc lượt, nên luồng lượt luôn có điểm kết thúc rõ ràng.
+\end{itemize}
+
+\subsubsection{Kết thúc trận}
+\textbf{Các bước:} sau mỗi sự kiện có thể làm tàu bị hạ (tấn công, admin khóa tài khoản, bỏ cuộc), server kiểm tra còn đội nào hết tàu không. Có thì gửi \cmd{SHIP\_DESTROYED} và \cmd{MATCH\_END} kèm lý do và thống kê, hủy trận, đưa 2 đội về room (thành viên vẫn offline thì tự rời đội), và ghi kết quả vào log.
+
+\textbf{Mục đích thiết kế:} gom mọi trường hợp kết thúc vào \emph{một} điểm kiểm tra duy nhất để không bỏ sót trường hợp nào; đội được giữ nguyên để đánh tiếp như khi ghép trận trong game.
+
+% ---------------------------------------------------------------------
+\subsection{Luồng lỗi}
+
+Nguyên tắc chung: lệnh bị từ chối \emph{không làm thay đổi gì} (không trừ tài nguyên, không tốn lượt, không dừng đồng hồ), và server kiểm tra theo thứ tự cố định nên mã lỗi luôn dự đoán được.
+
+\begin{itemize}
+  \item \textbf{Lỗi đăng nhập:} sai username hay sai mật khẩu đều trả \cmd{3003}; \cmd{3004} (bị khóa) chỉ trả khi mật khẩu đúng. \emph{Mục đích:} không cho kẻ dò biết tài khoản nào tồn tại hay bị khóa.
+  \item \textbf{Lỗi định dạng:} JSON hỏng hay lệnh lạ thì báo lỗi và giữ kết nối; message quá 8192 byte thì báo lỗi rồi đóng kết nối. \emph{Mục đích:} lỗi nhỏ không làm người chơi rớt mạng; còn message quá dài làm mất ranh giới dòng, đồng thời có thể là client cố gửi rác làm đầy bộ nhớ server.
+  \item \textbf{Lỗi luật chơi:} chưa tới lượt, thiếu coin, hết slot, trộn pháo, đang mở rương\ldots{} đều bị từ chối; riêng reload vẫn làm được ngoài lượt. \emph{Mục đích:} server là bên quyết định duy nhất, client sửa đổi cũng không gian lận được.
+  \item \textbf{Lỗi phân quyền:} thành viên dùng lệnh đội trưởng, người thường dùng lệnh admin đều bị từ chối; kể cả admin cũng không xóa đội hay kick người khi đội đang trong trận. \emph{Mục đích:} quyền tách bạch, không ai phá được trận đang đánh.
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\subsection{Luồng timeout}
+
+Mọi đồng hồ nằm trong min-heap của luồng chính và dùng thời gian của server.
+
+\begin{itemize}
+  \item \textbf{Hết giờ lượt:} server gửi \cmd{TURN\_SKIPPED} và chuyển lượt; request đến sau mốc hết hạn bị coi là ngoài lượt. \emph{Mục đích:} một người treo máy không làm treo cả trận; dùng giờ server để client không gian lận bằng giờ máy.
+  \item \textbf{Hết giờ rương:} coi như trả lời sai, đồng hồ lượt chạy tiếp với thời gian còn lại. \emph{Mục đích:} rương không giữ lượt mãi, nhưng người chơi vẫn được dùng nốt thời gian của mình.
+  \item \textbf{Kết nối im lặng quá lâu:} client gửi \cmd{PING} mỗi 20 giây; 60 giây không có byte nào thì server đóng kết nối. \emph{Mục đích:} phát hiện kết nối đã chết mà không có gói FIN/RST (ví dụ rút dây mạng) để giải phóng tài nguyên.
+  \item \textbf{Bỏ cuộc:} cả đội offline liên tục 120 giây thì thua. \emph{Mục đích:} trận không kéo dài vô hạn khi một đội bỏ đi.
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\subsection{Luồng mất kết nối và kết nối lại}
+
+\subsubsection{Mất kết nối giữa trận rồi vào lại}
+\textbf{Các bước:}
+\begin{enumerate}
+  \item Server hủy phiên nhưng giữ tàu trong trận (đánh dấu offline), gửi \cmd{PLAYER\_DISCONNECTED} cho những người còn lại.
+  \item Tới lượt người đó thì bỏ qua ngay, không chờ hết giờ.
+  \item Client tự kết nối lại với backoff 1, 2, 4, \ldots{} 30 giây, rồi tự gửi \cmd{LOGIN}.
+  \item Server trả trạng thái \cmd{IN\_MATCH}, gửi \cmd{MATCH\_RESUME} kèm snapshot, và báo \cmd{PLAYER\_RECONNECTED} cho người khác.
+\end{enumerate}
+\textbf{Mục đích thiết kế:}
+\begin{itemize}
+  \item Rớt mạng tạm thời không làm thua trận.
+  \item Bỏ lượt ngay để đối phương không phải chờ người đang offline.
+  \item Backoff tăng dần để hàng loạt client không dồn dập kết nối vào server cùng lúc khi mạng chập chờn.
+\end{itemize}
+
+\subsubsection{Thay thế phiên}
+\textbf{Các bước:} đăng nhập đúng mật khẩu khi tài khoản đang có phiên ở kết nối khác thì server gửi \cmd{FORCE\_LOGOUT} cho kết nối cũ, đóng nó, và chuyển phiên sang kết nối mới.
+
+\textbf{Mục đích thiết kế:} khi mạng rớt, server có thể mất tới 60 giây mới phát hiện kết nối cũ đã chết. Nếu từ chối đăng nhập trùng, người chơi bị kẹt ngoài trận suốt thời gian đó. Muốn chiếm phiên vẫn phải có đúng mật khẩu nên không giảm an toàn.
+
+\subsubsection{Mất kết nối ở các lúc khác}
+\begin{itemize}
+  \item \textbf{Đang ở sảnh chờ:} người đó rời đội, sảnh bị đóng (2 đội không còn cùng số người), 2 đội về room. \emph{Mục đích:} không để đội kia chờ một người đã rời đi.
+  \item \textbf{Đang mở rương:} mất rương và bị bỏ lượt. \emph{Mục đích:} rương và lượt không bị treo.
+  \item \textbf{Đang rảnh:} mất phiên và tự rời đội (đội trưởng rời thì quyền chuyển cho người có slot nhỏ nhất); lời mời, lời xin vào của người đó bị hủy. \emph{Mục đích:} đội là party nên chỉ gồm người đang online, đồng đội thấy ngay ai còn ở lại.
+\end{itemize}
+
+% =====================================================================
+\section{Mô hình trạng thái}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}l l L@{}}
+\toprule
+\textbf{Phía} & \textbf{Đối tượng} & \textbf{Trạng thái} \\
+\midrule
+Server & Kết nối & CONNECTED, AUTH\_PENDING, LOGGED\_IN, CLOSED \\
+Server & Người chơi & NO\_TEAM, IN\_TEAM, LOBBY, IN\_MATCH (ngoài trận, mất kết nối thì về NO\_TEAM) \\
+Server & Sảnh chờ & WAIT\_READY, GUEST\_READY, STARTED, CLOSED \\
+Server & Trận & NEXT\_TURN, ACTING, CHEST, RESOLVE, SKIPPED, CHECK\_END, ENDED \\
+Client & Kết nối & DISCONNECTED, CONNECTING, CONNECTED, LOGGING\_IN, ONLINE, RECONNECT\_WAIT \\
+Client & Màn hình & LOGIN, HOME, LOBBY, GAME, RESULT \\
+Client & Trong trận & WAITING, MY\_TURN, ANSWERING, WATCH\_CHEST, DEAD, ENDED \\
+\bottomrule
+\end{tabularx}
+\caption{Các máy trạng thái}
+\end{table}
+
+% =====================================================================
+\section{Thiết kế server}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+\toprule
+\textbf{Module} & \textbf{Trách nhiệm} \\
+\midrule
+\cmd{loop}, \cmd{conn} & Vòng lặp epoll; buffer nhận/gửi non-blocking; idle timeout \\
+\cmd{linebuf}, \cmd{msg} & Tách dòng, tạo/đọc message (dùng chung với client và test) \\
+\cmd{dispatch} & Bảng lệnh, kiểm tra theo thứ tự cố định \\
+\cmd{session}, \cmd{cache} & Phiên, online, thay thế phiên; tài khoản và câu hỏi nạp từ DB lên RAM \\
+\cmd{team}, \cmd{lobby} & Đội (party trong RAM), slot, lời mời; thách đấu, sảnh chờ \\
+\cmd{match} & Luật chơi dạng hàm thuần, không biết socket/JSON (dễ unit test) \\
+\cmd{match\_net}, \cmd{snapshot} & Nối luật chơi với mạng; snapshot lọc theo người nhận \\
+\cmd{timer} & Min-heap mốc hết hạn; hủy lười bằng \cmd{generation} \\
+\cmd{pool}, \cmd{storage}, \cmd{auth}, \cmd{log} & Thread pool + DB writer; toàn bộ SQL; PBKDF2; log \\
+\bottomrule
+\end{tabularx}
+\caption{Các module server}
+\end{table}
+
+\textbf{Cấu hình} \cmd{server.conf} dạng \cmd{khóa = giá trị}: mạng (port, số kết nối tối đa, kích thước message và buffer, idle timeout), pool (số luồng, giới hạn hàng đợi), lưu trữ (đường dẫn DB, log, file câu hỏi), số vòng PBKDF2, luật chơi (mặc định và khoảng cho phép của setting, timeout bỏ cuộc, tỉ lệ rương) và \cmd{rng\_seed} để test lặp lại được. Giá trị sai thì báo lỗi kèm số dòng rồi thoát.
+
+\textbf{Log} mỗi sự kiện 1 dòng: thời gian ISO-8601, mức, nhóm (NET, AUTH, TEAM, LOBBY, MATCH, CHEST, ADMIN, DB, SYS), tên sự kiện và các cặp \cmd{khóa=giá\_trị}. Không bao giờ ghi mật khẩu. Ghi file nằm ở luồng DB writer.
+\begin{lstlisting}
+2026-11-17T10:26:10.777+07:00 INFO MATCH ATTACK match=3 from=son to=minh gun=LASER:2 missiles=1 damage=1000
+\end{lstlisting}
+
+\textbf{Build:} \cmd{-std=c11 -D\_GNU\_SOURCE -Wall -Wextra}; thư viện \cmd{libsqlite3}, \cmd{libcrypto}, \cmd{pthread}; client thêm GTK3.
+
+% =====================================================================
+\section{Thiết kế client}
+
+Dữ liệu đi một chiều: \cmd{net} nhận message $\rightarrow$ \cmd{state} cập nhật $\rightarrow$ các màn hình vẽ lại. Màn hình không tự tính luật chơi.
+\begin{itemize}
+  \item \textbf{Tầng mạng:} socket gắn vào main loop qua \cmd{g\_io\_add\_watch}; bảng \cmd{id} $\rightarrow$ callback để ghép response; request quá 15 giây không có response thì coi như mất kết nối; tự kết nối lại với backoff 1, 2, 4, \ldots{} 30 giây rồi tự đăng nhập (mật khẩu chỉ giữ trong RAM).
+  \item \textbf{Đồng hồ:} tính độ lệch với server qua \cmd{PING}; đếm ngược chỉ để hiển thị, hết giờ thì chờ event của server.
+  \item \textbf{Màn hình:} Đăng nhập/Đăng ký; Màn chính (danh sách đội, đội của tôi, lời mời, thách đấu, tab Admin); Sảnh chờ; Trận đấu (tàu 2 đội, vũ khí, cửa hàng, khung tấn công, nhật ký trận); hộp thoại rương (modal với người trả lời, chỉ xem với đồng đội); Kết quả trận (sau đó quay về màn hình đội).
+  \item \textbf{Nút bấm} bật/tắt theo trạng thái client; nút đang chờ response bị làm mờ để tránh bấm 2 lần. Server vẫn kiểm tra lại mọi lệnh.
+\end{itemize}
+
+% =====================================================================
+\section{Kế hoạch kiểm thử}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+\toprule
+\textbf{Tầng} & \textbf{Nội dung} \\
+\midrule
+Unit test & Tách dòng (cắt từng byte, dính nhiều message, giới hạn 8192); luật chơi (giáp, damage dư, chọn khẩu laze, reload, giới hạn slot, tất cả hoặc không); tỉ lệ rương; min-heap đồng hồ; slot, đội trưởng và tự rời đội khi offline; ma trận phân quyền; PBKDF2; ràng buộc DB; đọc cấu hình và file câu hỏi \\
+Integration test & Bật server thật với cấu hình test (lượt 1 giây, \cmd{rng\_seed} cố định), client giả lập điều khiển nhiều người chơi. Mỗi sequence diagram thành ít nhất 1 test; thêm: thứ tự response, đăng ký trùng tên đồng thời, nhiều trận xen kẽ, hết trận đội quay về room, khởi động lại vẫn còn tài khoản, tắt an toàn, log không chứa mật khẩu \\
+Load test & 10.000 kết nối giữ mở; 500 đăng nhập đồng thời; 200 trận cùng lúc trong 5 phút; p99 dưới 50 ms, không crash \\
+Test tay & Checklist giao diện GTK: bật/tắt nút, đếm ngược, hộp thoại rương, tự kết nối lại \\
+\bottomrule
+\end{tabularx}
+\caption{Các tầng kiểm thử}
+\end{table}
+
+\textbf{Tiêu chí đạt:} \cmd{make test} pass trên Ubuntu 20.04 (GCC 9.4, \cmd{-std=c11}); bản test sạch lỗi với AddressSanitizer và UndefinedBehaviorSanitizer; ThreadSanitizer không phát hiện race giữa luồng chính và pool.
+
+\end{document}

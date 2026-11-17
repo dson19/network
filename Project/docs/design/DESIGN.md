@@ -71,7 +71,7 @@ Sơ đồ: [sequence/02-join-team.md](diagrams/sequence/02-join-team.md)
 4. Server gán X vào slot trống có số nhỏ nhất, rồi hủy:
    - mọi lời xin vào và lời mời khác của X,
    - mọi lời treo của đội nếu đội vừa đủ 3 người.
-5. Server cập nhật RAM, trả `1000` cho đội trưởng, rồi đẩy lệnh ghi thành viên mới vào hàng đợi của DB writer (quy tắc RAM trước, DB sau: DATABASE.md mục 2).
+5. Server cập nhật đội trong RAM và trả `1000` cho đội trưởng. Đội là party chỉ nằm trong RAM nên không ghi DB.
 6. Server gửi `JOIN_RESULT` cho X, rồi gửi `TEAM_UPDATE` cho cả đội (kể cả X).
 
 Luồng **mời vào đội** (`TEAM_INVITE` rồi `TEAM_INVITE_REPLY`) đi theo các bước tương tự nhưng đổi vai: đội trưởng gửi lời mời, người được mời chấp nhận.
@@ -137,12 +137,12 @@ Sơ đồ: [sequence/05-match-end.md](diagrams/sequence/05-match-end.md)
 |---|---|
 | **Kích hoạt** | Có tàu bị hạ (do tấn công hoặc do bị khóa tài khoản), hoặc một đội bỏ cuộc (xem 4.4) |
 | **Điều kiện** | Một đội không còn tàu nào sống, hoặc toàn đội offline quá 120 giây |
-| **Kết quả** | Trận bị hủy. Cả 2 đội về `IDLE` và được mở khóa thao tác |
+| **Kết quả** | Trận bị hủy. Cả 2 đội quay về room (`IDLE`) và được mở khóa thao tác |
 
 1. Server gửi `SHIP_DESTROYED` cho tàu vừa bị hạ.
 2. Server gửi `MATCH_END` với `reason` là `ELIMINATED` (bị hạ hết tàu) hoặc `FORFEIT` (bỏ cuộc).
-3. Server hủy trận và mọi đồng hồ của trận đó, rồi chuyển 2 đội về `IDLE`.
-4. Server đẩy job ghi kết quả trận vào log.
+3. Server hủy trận và mọi đồng hồ của trận đó, rồi chuyển 2 đội về room (`IDLE`). Thành viên vẫn còn offline bị tự rời đội, đồng đội nhận `TEAM_UPDATE`.
+4. Server đẩy job ghi kết quả trận vào log. Kết quả trận không lưu vào DB.
 
 ---
 
@@ -289,10 +289,9 @@ Sơ đồ: [sequence/32-disconnect-other.md](diagrams/sequence/32-disconnect-oth
 
 | Đang ở đâu | Server xử lý |
 |---|---|
-| Đội trưởng, đang ở sảnh chờ | Đóng sảnh chờ, gửi `LOBBY_CLOSED` (`reason: DISCONNECTED`), 2 đội về `IDLE` |
-| Thành viên thường, đang ở sảnh chờ | Không ảnh hưởng đến sảnh chờ. Vào lại được trước khi trận bắt đầu |
+| Bất kỳ thành viên nào, đang ở sảnh chờ | Người đó rời đội. Đóng sảnh chờ, gửi `LOBBY_CLOSED` (`reason: DISCONNECTED`), 2 đội về `IDLE` |
 | Đang tới lượt và đang mở rương | Mất rương: gửi `CHEST_RESULT` (`correct: false`) cho đội đó, rồi `TURN_SKIPPED` (`reason: DISCONNECTED`) |
-| Không ở sảnh chờ, không trong trận | Chỉ hủy phiên. Đội, lời mời và lời xin vào giữ nguyên. Đồng đội nhận `TEAM_UPDATE` với `online: false` |
+| Không ở sảnh chờ, không trong trận | Hủy phiên và tự rời đội (chuyển đội trưởng nếu cần, đội trống thì bị xóa). Hủy lời mời và lời xin vào của người đó. Đồng đội nhận `TEAM_UPDATE` |
 
 ---
 
@@ -309,7 +308,7 @@ Sơ đồ: [sequence/32-disconnect-other.md](diagrams/sequence/32-disconnect-oth
 
 Ghi chú:
 - **Kết nối và phiên:** trong lúc ở `AUTH_PENDING`, request tiếp theo của kết nối đó phải chờ. `REGISTER` cũng đi qua pool để hash mật khẩu nhưng không đăng nhập luôn, nên kết nối vẫn ở `CONNECTED`.
-- **Người chơi:** trạng thái này **không phụ thuộc vào việc online**. Người mất kết nối giữa trận vẫn ở `IN_MATCH`, và đăng nhập lại thì quay về đúng trận đó. Khi ở `LOBBY` hoặc `IN_MATCH` thì mọi thao tác đội đều bị khóa, kể cả với admin.
+- **Người chơi:** ngoài trận, mất kết nối là rời đội (về `NO_TEAM`). Riêng trong trận, người mất kết nối vẫn ở `IN_MATCH` và đăng nhập lại thì quay về đúng trận đó; hết trận mà vẫn offline thì rời đội. Khi ở `LOBBY` hoặc `IN_MATCH` thì mọi thao tác đội đều bị khóa, kể cả với admin.
 - **Sảnh chờ:** đội chủ đổi setting thì sảnh chờ luôn quay về `WAIT_READY`.
 - **Trận đấu:** admin khóa tài khoản người đang trong trận thì tàu bị hạ ngay, và trận cũng đi qua bước `CHECK_END`.
 

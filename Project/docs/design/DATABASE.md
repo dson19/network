@@ -2,6 +2,10 @@
 
 Tài liệu này mô tả dữ liệu lâu dài của server: lược đồ SQLite, cách giữ RAM và DB khớp nhau, cách tạo admin đầu tiên và cách nạp câu hỏi.
 
+DB chỉ có **2 bảng**: `users` và `questions`. Hai loại dữ liệu sau **không** nằm trong DB:
+- **Đội:** là party tạm thời như khi ghép trận, chỉ nằm trong RAM (SPEC.md mục 3).
+- **Lịch sử trận:** không lưu. Kết quả trận được gửi cho người chơi qua event `MATCH_END` và ghi vào file log.
+
 - Phân loại dữ liệu nào để ở DB, RAM hay file: xem [SPEC.md](SPEC.md) mục 1.
 - Lý do chọn SQLite: xem [PROTOCOL.md](PROTOCOL.md) mục 1.6.
 
@@ -36,23 +40,6 @@ CREATE TABLE users (
   last_login_at INTEGER
 );
 
--- Đội
-CREATE TABLE teams (
-  id         INTEGER PRIMARY KEY,
-  name       TEXT    NOT NULL UNIQUE,
-  captain_id INTEGER NOT NULL REFERENCES users(id),
-  created_at INTEGER NOT NULL
-);
-
--- Thành viên đội
-CREATE TABLE team_members (
-  team_id   INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-  user_id   INTEGER NOT NULL UNIQUE REFERENCES users(id),
-  slot      INTEGER NOT NULL CHECK (slot BETWEEN 0 AND 2),
-  joined_at INTEGER NOT NULL,
-  PRIMARY KEY (team_id, slot)
-);
-
 -- Ngân hàng câu hỏi
 CREATE TABLE questions (
   id       INTEGER PRIMARY KEY,
@@ -66,38 +53,6 @@ CREATE TABLE questions (
   active   INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
 );
 CREATE INDEX idx_questions_tier ON questions(tier, active);
-
--- Lịch sử trận đấu
-CREATE TABLE matches (
-  id          INTEGER PRIMARY KEY,
-  team_a_id   INTEGER NOT NULL,          -- không FK: đội bị xóa vẫn giữ lịch sử
-  team_b_id   INTEGER NOT NULL,
-  team_a_name TEXT    NOT NULL,          -- lưu tên tại thời điểm đấu
-  team_b_name TEXT    NOT NULL,
-  winner_id   INTEGER NOT NULL,
-  reason      TEXT    NOT NULL CHECK (reason IN ('ELIMINATED', 'FORFEIT')),
-  turn_time   INTEGER NOT NULL,
-  chest_time  INTEGER NOT NULL,
-  start_coin  INTEGER NOT NULL,
-  turns       INTEGER NOT NULL,          -- tổng số lượt đã chơi
-  started_at  INTEGER NOT NULL,
-  ended_at    INTEGER NOT NULL
-);
-CREATE INDEX idx_matches_team_a ON matches(team_a_id);
-CREATE INDEX idx_matches_team_b ON matches(team_b_id);
-
--- Người chơi trong từng trận
-CREATE TABLE match_players (
-  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-  user_id  INTEGER NOT NULL,             -- không FK, cùng lý do như trên
-  username TEXT    NOT NULL,
-  team_id  INTEGER NOT NULL,
-  slot     INTEGER NOT NULL,
-  survived INTEGER NOT NULL CHECK (survived IN (0, 1)),
-  damage_dealt INTEGER NOT NULL,
-  PRIMARY KEY (match_id, user_id)
-);
-CREATE INDEX idx_match_players_user ON match_players(user_id);
 ```
 
 Mọi thời điểm đều là **unix giây** (`INTEGER`). Không dùng `DATETIME` để tránh lệch múi giờ.
@@ -107,14 +62,11 @@ Mọi thời điểm đều là **unix giây** (`INTEGER`). Không dùng `DATETI
 | Ràng buộc | Bảo đảm luật nào |
 |---|---|
 | `users.username UNIQUE COLLATE NOCASE` | Không có 2 tài khoản `Son` và `son` |
-| `team_members.user_id UNIQUE` | Mỗi người chỉ ở 1 đội |
-| `PRIMARY KEY (team_id, slot)` + `CHECK (slot BETWEEN 0 AND 2)` | Mỗi slot đúng 1 người, tối đa 3 người mỗi đội |
-| `teams.captain_id` (không phải cột cờ trong `team_members`) | Mỗi đội có đúng 1 đội trưởng |
-| `ON DELETE CASCADE` trên `team_members` | Xóa đội thì tự xóa thành viên |
+| `role CHECK`, `locked CHECK` | Chỉ nhận đúng các giá trị hợp lệ |
 | `questions.active` | Xóa mềm: admin xóa câu hỏi không làm mất dữ liệu cũ |
-| `matches` không có khóa ngoại tới `teams` | Đội bị xóa vẫn còn lịch sử trận đấu |
+| `answer CHECK (A, B, C, D)` | Đáp án luôn là 1 trong 4 lựa chọn |
 
-Đội trưởng phải là thành viên của chính đội đó. SQLite không diễn đạt được ràng buộc này bằng `CHECK`, nên lớp `storage` kiểm tra trong cùng transaction khi tạo đội hoặc chuyển quyền.
+Các luật về đội (mỗi người 1 đội, tối đa 3 người, đúng 1 đội trưởng) được bảo đảm trong RAM bởi module `team`, vì đội không nằm trong DB.
 
 ### 1.4. Phiên bản lược đồ
 
@@ -131,14 +83,14 @@ Mọi thời điểm đều là **unix giây** (`INTEGER`). Không dùng `DATETI
 
 ### 2.1. Quy tắc
 
-1. **Lúc khởi động, server nạp toàn bộ dữ liệu lâu dài vào RAM**: users (trừ `pass_hash` và `salt`), teams, team_members, và các câu hỏi đang `active`.
-2. **Luồng chính chỉ đọc từ RAM**, không bao giờ chờ DB để trả lời một câu hỏi kiểu "đội này có đủ người chưa".
+1. **Lúc khởi động, server nạp toàn bộ dữ liệu lâu dài vào RAM**: users (trừ `pass_hash` và `salt`) và các câu hỏi đang `active`.
+2. **Luồng chính chỉ đọc từ RAM**, không bao giờ chờ DB để trả lời một câu hỏi kiểu "tên đăng nhập này có chưa" hay "tài khoản này có bị khóa không".
 3. **Ghi theo kiểu RAM trước, DB sau:**
    1. Luồng chính kiểm tra điều kiện trên RAM.
    2. Luồng chính sửa RAM.
    3. Luồng chính trả response và gửi event.
    4. Luồng chính đẩy lệnh ghi vào **hàng đợi ghi**.
-4. **Hàng đợi ghi chỉ có 1 luồng xử lý (DB writer)**, chạy theo đúng thứ tự FIFO. Nhờ vậy thứ tự ghi xuống DB giống hệt thứ tự thay đổi trong RAM. Ví dụ "vào đội" luôn được ghi trước "rời đội".
+4. **Hàng đợi ghi chỉ có 1 luồng xử lý (DB writer)**, chạy theo đúng thứ tự FIFO. Nhờ vậy thứ tự ghi xuống DB giống hệt thứ tự thay đổi trong RAM. Ví dụ admin khóa rồi mở khóa một tài khoản thì DB luôn ghi "khóa" trước "mở khóa".
 5. Các việc **cần kết quả từ DB** thì đi qua thread pool đọc, không qua DB writer:
    - `LOGIN`: đọc `pass_hash` và `salt`, rồi tính PBKDF2.
    - `ADMIN_LOG`: đọc đuôi file log.
@@ -151,8 +103,8 @@ Mọi thời điểm đều là **unix giây** (`INTEGER`). Không dùng `DATETI
 
 | Phương án | Ưu | Nhược |
 |---|---|---|
-| **RAM trước, DB sau, 1 luồng ghi** (đã chọn) | Luồng chính không bao giờ chờ DB. Không phải "giữ chỗ" cho đội hay slot. Thứ tự ghi luôn đúng | Server sập thì có thể mất vài thay đổi cuối cùng chưa kịp ghi (cỡ mili giây) |
-| DB trước, RAM sau | Không bao giờ mất thay đổi đã báo thành công | Trong lúc chờ DB, phải khóa đội lại để không ai sửa song song. Phức tạp và chậm hơn nhiều |
+| **RAM trước, DB sau, 1 luồng ghi** (đã chọn) | Luồng chính không bao giờ chờ DB. Thứ tự ghi luôn đúng | Server sập thì có thể mất vài thay đổi cuối cùng chưa kịp ghi (cỡ mili giây) |
+| DB trước, RAM sau | Không bao giờ mất thay đổi đã báo thành công | Trong lúc chờ DB, phải khóa dữ liệu đang sửa để không ai sửa song song. Phức tạp và chậm hơn nhiều |
 | Không cache, luôn đọc DB | Đơn giản về ý tưởng | Mọi lệnh đều phải chờ pool, làm mất lợi thế của luồng chính epoll |
 
 **Dung lượng RAM:** mỗi user trong cache khoảng 64 byte. 100.000 user tốn khoảng 6 MB, không đáng kể.
@@ -164,8 +116,8 @@ Mọi ràng buộc đều đã được kiểm tra trên RAM trước khi ghi, n
 1. DB writer ghi log mức `ERROR`, kèm câu lệnh bị lỗi.
 2. DB writer **thử lại 3 lần**, mỗi lần cách nhau 100 ms.
 3. Vẫn lỗi: server chuyển sang **chế độ chỉ đọc**:
-   - Mọi lệnh làm thay đổi dữ liệu lâu dài (đăng ký, đội, admin) bị từ chối với mã `9001`.
-   - Các trận đang chạy vẫn chơi tiếp. Kết quả trận chỉ được ghi vào log.
+   - Mọi lệnh làm thay đổi dữ liệu lâu dài (đăng ký, đổi mật khẩu, khóa tài khoản, sửa câu hỏi) bị từ chối với mã `9001`.
+   - Đội và trận nằm trong RAM nên vẫn chơi tiếp bình thường.
    - Ghi log mức `FATAL` để admin biết mà xử lý.
 
 ### 2.4. Tắt server an toàn
@@ -177,7 +129,7 @@ Khi nhận `SIGINT` hoặc `SIGTERM`:
 3. Chờ hàng đợi ghi chạy hết, tối đa 10 giây.
 4. Đóng DB và file log, rồi thoát.
 
-Các trận đang dở bị hủy và **không** được ghi vào bảng `matches`.
+Mọi đội và trận đang dở nằm trong RAM nên mất theo. Mỗi trận đang dở được ghi 1 dòng log `MATCH ABORTED`.
 
 ---
 
@@ -202,25 +154,15 @@ int storage_user_set_password(sqlite3 *db, int64_t user_id, const uint8_t *hash,
 int storage_user_set_locked(sqlite3 *db, int64_t user_id, int locked);
 int storage_user_touch_login(sqlite3 *db, int64_t user_id, int64_t when);
 
-/* Đội */
-int storage_team_create(sqlite3 *db, const char *name, int64_t captain_id, int64_t *out_id);
-int storage_team_delete(sqlite3 *db, int64_t team_id);
-int storage_team_set_captain(sqlite3 *db, int64_t team_id, int64_t user_id);
-int storage_member_add(sqlite3 *db, int64_t team_id, int64_t user_id, int slot);
-int storage_member_remove(sqlite3 *db, int64_t team_id, int64_t user_id);
-
 /* Câu hỏi */
 int storage_question_add(sqlite3 *db, const Question *q, int64_t *out_id);
 int storage_question_deactivate(sqlite3 *db, int64_t question_id);
 int storage_question_import_file(sqlite3 *db, const char *path, int *out_count);
-
-/* Lịch sử trận */
-int storage_match_save(sqlite3 *db, const MatchRecord *m);
 ```
 
 - Mọi hàm trả về `STORAGE_OK`, `STORAGE_CONSTRAINT` (vi phạm `UNIQUE` hoặc `CHECK`), `STORAGE_NOT_FOUND`, hoặc `STORAGE_ERROR`.
 - Mọi câu lệnh đều dùng **prepared statement với tham số `?`**. Không bao giờ ghép chuỗi SQL bằng dữ liệu người dùng, để chống SQL injection.
-- Thao tác nhiều bước (tạo đội = `INSERT teams` + `INSERT team_members`) nằm trong 1 transaction `BEGIN IMMEDIATE ... COMMIT`.
+- Thao tác nhiều bước (ví dụ nạp cả file câu hỏi) nằm trong 1 transaction `BEGIN IMMEDIATE ... COMMIT`.
 
 ---
 

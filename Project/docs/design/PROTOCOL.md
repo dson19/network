@@ -70,7 +70,7 @@ Tài liệu này đi kèm [SPEC.md](SPEC.md) (luật chơi) và [DESIGN.md](DESI
 - Mở ở chế độ WAL để việc đọc không bị chặn bởi việc ghi. Mọi truy vấn chạy trên thread pool, không chạy trên luồng chính.
 - Dùng SQLite **ngay từ đầu**, không làm bản RAM tạm: SQLite đủ nhẹ để thêm vào từ ngày đầu, tránh viết code bỏ đi, và lỗi SQL/ràng buộc/transaction lộ ra sớm thay vì dồn tới cuối.
 - Toàn bộ SQL gom vào lớp `storage.h`/`storage.c`. Game logic chỉ gọi hàm như `storage_user_create()`, không viết SQL trực tiếp.
-- Chỉ dữ liệu cần tồn tại lâu dài (tài khoản, role, đội, câu hỏi) mới vào DB. Trạng thái trận, phiên, lời mời giữ trong RAM. Bảng phân loại đầy đủ ở SPEC.md mục 1.
+- Chỉ dữ liệu cần tồn tại lâu dài (tài khoản, role, câu hỏi) mới vào DB. Đội, trạng thái trận, phiên, lời mời giữ trong RAM. Không lưu lịch sử trận. Bảng phân loại đầy đủ ở SPEC.md mục 1.
 
 ### 1.7. Các thành phần và trách nhiệm
 
@@ -85,12 +85,12 @@ Sơ đồ: [architecture.md](diagrams/architecture.md)
 | **Connection** | Server, luồng chính | Mỗi kết nối 1 struct: socket non-blocking, buffer nhận, buffer gửi, thời điểm nhận dữ liệu gần nhất |
 | **Dispatcher** | Server, luồng chính | Tách dòng, parse JSON, kiểm tra quyền theo thứ tự cố định, gọi đúng manager |
 | **Session manager** | Server, luồng chính | Ánh xạ kết nối với tài khoản. Theo dõi ai online. Xử lý thay thế phiên |
-| **Team manager** | Server, luồng chính | Đội, slot, đội trưởng, lời mời, lời xin vào. Ghi thay đổi xuống DB qua pool |
+| **Team manager** | Server, luồng chính | Đội (party trong RAM), slot, đội trưởng, lời mời, lời xin vào. Tự cho người offline rời đội |
 | **Challenge và Lobby** | Server, luồng chính | Lời thách đấu, sảnh chờ, setting, sẵn sàng, bắt đầu |
 | **Match engine** | Server, luồng chính | Lượt, rương, mua bán, tấn công, kết thúc trận. Hàm thuần nhận `Match *` |
 | **Timer** | Server, luồng chính | Hàng đợi ưu tiên các mốc hết hạn: lượt, rương, idle, bỏ cuộc |
 | **Worker** | Server, thread pool | Việc chậm: PBKDF2, truy vấn SQLite, ghi log. **Không bao giờ đụng vào state game** |
-| **SQLite** | Server | Tài khoản, role, đội, câu hỏi. Chế độ WAL |
+| **SQLite** | Server | Tài khoản, role, câu hỏi. Chế độ WAL |
 | **File log** | Server | Ghi nối thêm mọi hoạt động |
 
 ---
@@ -211,6 +211,7 @@ Sơ đồ: [architecture.md](diagrams/architecture.md)
 | 5008 | NOT_A_MEMBER | Người này không ở trong đội |
 | 5009 | REQUEST_NOT_FOUND | Không có lời xin vào hoặc lời mời tương ứng |
 | 5010 | ALREADY_PENDING | Đã gửi lời xin vào hoặc lời mời trước đó rồi |
+| 5011 | USER_OFFLINE | Người được mời đang offline |
 | **6001** | TEAM_SIZE_MISMATCH | 2 đội không cùng số người |
 | 6002 | CHALLENGE_NOT_FOUND | Không có lời thách đấu tương ứng |
 | 6003 | SAME_TEAM | Không thể thách đấu chính đội mình |
@@ -291,7 +292,8 @@ Quy định:
 - Khi một người vào được đội (qua lời xin vào hoặc lời mời):
   - Mọi lời xin vào đội khác và mọi lời mời khác của người đó bị hủy.
   - Nếu đội vừa đủ 3 người thì mọi lời xin vào và lời mời còn treo của đội đó cũng bị hủy.
-- Người chơi ngắt kết nối thì lời mời và lời xin vào của họ **vẫn giữ nguyên**. Các lời này lưu trong RAM và mất khi server khởi động lại.
+- **Đội là party, chỉ nằm trong RAM** (SPEC.md mục 3). Người chơi offline khi đội không ở trong trận thì tự rời đội (đồng đội nhận `TEAM_UPDATE`), và mọi lời xin vào, lời mời của họ bị hủy.
+- `TEAM_INVITE` tới người đang offline thì bị từ chối với mã `5011`.
 
 ### 4.4. Thách đấu và sảnh chờ
 | Lệnh | Quyền | Tham số | `data` trả về |
@@ -440,10 +442,10 @@ Mọi event trong trận đều kèm trường `state`, là snapshot mới nhấ
    - Ở các lượt sau, nếu người đó vẫn chưa kết nối lại thì cũng bị bỏ qua ngay, không phải chờ hết giờ.
    - Người đó **đăng nhập lại được trong lúc trận còn diễn ra**. Đăng nhập lại thì được đưa về trận (nhận event `MATCH_RESUME`), và mọi người nhận `PLAYER_RECONNECTED`.
    - Cả một đội offline liên tục 120 giây thì đội đó thua (`MATCH_END` với `reason: "FORFEIT"`).
-   - Đội trưởng mất kết nối khi đang ở sảnh chờ thì sảnh chờ bị đóng (`LOBBY_CLOSED`).
+   - Thành viên bất kỳ mất kết nối khi đang ở sảnh chờ thì rời đội và sảnh chờ bị đóng (`LOBBY_CLOSED`).
 9. Rương chưa mở mà hết lượt thì rương biến mất.
 
-**Kết thúc trận:** một đội không còn tàu nào sống thì gửi `MATCH_END`. Cả 2 đội về trạng thái `IDLE`, các đội được mở khóa thao tác. Kết quả trận được ghi vào log.
+**Kết thúc trận:** một đội không còn tàu nào sống thì gửi `MATCH_END`. Cả 2 đội quay về room (trạng thái `IDLE`) và được mở khóa thao tác. Thành viên vẫn còn offline lúc này bị tự rời đội. Kết quả trận chỉ được ghi vào log, không lưu vào DB.
 
 ---
 
@@ -576,8 +578,8 @@ S: {"type":"evt","evt":"TURN_START","data":{"player":"minh",...}}
     - đang mở rương thì mất rương và bị bỏ qua lượt;
     - đăng nhập lại thì nhận `MATCH_RESUME`.
 23. Cả một đội **offline liên tục 120 giây** khi đang trong trận thì đội đó thua do bỏ cuộc.
-24. Đội trưởng của một trong 2 đội mất kết nối khi **đang ở sảnh chờ** thì sảnh chờ bị đóng.
-25. Mất kết nối khi **không ở sảnh chờ, không trong trận**: chỉ mất phiên. Đội, lời mời và lời xin vào giữ nguyên.
+24. Thành viên bất kỳ của 2 đội mất kết nối khi **đang ở sảnh chờ**: người đó rời đội và sảnh chờ bị đóng.
+25. Mất kết nối khi **không ở sảnh chờ, không trong trận**: mất phiên và tự rời đội; lời mời và lời xin vào của người đó bị hủy.
 26. Client tự kết nối lại với backoff 1, 2, 4, 8, 16, 30 giây, sau đó cứ 30 giây thử lại 1 lần. Kết nối lại xong thì tự gửi `LOGIN`. Client không tự kết nối lại sau `LOGOUT` hoặc `FORCE_LOGOUT`.
 
 ### 9.7. Bảo vệ server

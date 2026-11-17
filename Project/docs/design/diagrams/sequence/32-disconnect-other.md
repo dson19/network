@@ -9,9 +9,11 @@ sequenceDiagram
     participant S as Server
     participant O as Những người liên quan
 
-    alt X là đội trưởng, đang trong sảnh chờ
+    alt X đang trong sảnh chờ (bất kể vai trò)
         X--xS: mất kết nối
+        S->>S: X rời đội, 2 đội lệch số người
         S->>O: LOBBY_CLOSED {reason:DISCONNECTED}
+        S->>O: TEAM_UPDATE cho đồng đội của X
         S->>S: 2 đội về IDLE
     else X đang tới lượt và đang mở rương
         X--xS: mất kết nối
@@ -20,7 +22,7 @@ sequenceDiagram
         S->>O: TURN_SKIPPED {player:X, reason:DISCONNECTED}
     else X không ở sảnh chờ, không trong trận
         X--xS: mất kết nối
-        S->>S: hủy phiên. Đội, lời mời, lời xin vào giữ nguyên
-        S->>O: TEAM_UPDATE {X online:false} cho đồng đội
+        S->>S: hủy phiên, X tự rời đội, hủy lời mời và lời xin vào của X
+        S->>O: TEAM_UPDATE cho đồng đội (chuyển đội trưởng nếu X là đội trưởng)
     end
 ```

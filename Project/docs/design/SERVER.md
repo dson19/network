@@ -28,7 +28,7 @@ Project/
 │   ├── conn.c/.h            struct Connection, buffer nhận/gửi
 │   ├── dispatch.c/.h        bảng lệnh, kiểm tra quyền theo thứ tự cố định
 │   ├── session.c/.h         phiên đăng nhập, thay thế phiên, online
-│   ├── cache.c/.h           users, teams, câu hỏi trong RAM
+│   ├── cache.c/.h           users và câu hỏi nạp từ DB lên RAM
 │   ├── team.c/.h            đội, slot, đội trưởng, lời mời, lời xin vào
 │   ├── lobby.c/.h           thách đấu, sảnh chờ
 │   ├── match.c/.h           luật chơi: hàm thuần, không gửi mạng
@@ -119,7 +119,7 @@ typedef struct Ship {
     int        laser_mag[3]; int laser_count; /* băng từng khẩu laze */
     int        power_packs;                  /* kho bộ nguồn chung */
     int        missiles;                     /* 0..4 */
-    int        damage_dealt;                 /* thống kê, ghi vào match_players */
+    int        damage_dealt;                 /* thống kê, gửi trong MATCH_END */
 } Ship;
 
 typedef enum { TS_ACTING, TS_CHEST } TurnState;

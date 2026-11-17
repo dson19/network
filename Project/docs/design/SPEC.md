@@ -10,12 +10,12 @@
 | Dữ liệu | Để ở đâu | Lý do |
 |---|---|---|
 | Tài khoản, mật khẩu, role, trạng thái khóa | SQLite | Phải còn sau khi server khởi động lại |
-| Đội và thành viên đội | SQLite | Như trên |
 | Câu hỏi trắc nghiệm | SQLite (nạp từ file soạn sẵn ở lần chạy đầu) | Admin thêm/xóa được |
 | Phiên đăng nhập, ai đang online | RAM | Gắn với kết nối TCP, mất kết nối là hết phiên |
+| Đội (party) và thành viên | RAM | Đội là party tạm thời như khi ghép trận, chỉ gồm người đang online |
 | Lời mời, lời xin vào đội, lời thách đấu | RAM | Dữ liệu tạm |
 | Sảnh chờ, trận đấu, đồng hồ lượt/rương | RAM | Mỗi trận reset; thay đổi liên tục; server sập thì trận cũng hỏng, lưu lại vô ích |
-| Log hoạt động | File | Chỉ ghi nối thêm, không cần truy vấn |
+| Log hoạt động, kết quả trận | File | Chỉ ghi nối thêm, không cần truy vấn. Không lưu lịch sử trận vào DB |
 
 - "RAM" nghĩa là dữ liệu chỉ nằm trong biến/struct C của tiến trình server (ví dụ mảng `Match`), mất khi server tắt.
 
@@ -34,6 +34,12 @@ Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
 - Khóa tài khoản của người đang trong trận: người đó bị đăng xuất ngay và tàu của họ tính là bị hạ (HP = 0). Nếu đó là tàu cuối cùng còn sống của đội thì đội đó thua.
 
 ## 3. Đội
+- Đội hoạt động như **party khi ghép trận**: chỉ tồn tại trong RAM, server khởi động lại thì mọi đội mất.
+- Đội chỉ gồm người **đang online**:
+  - Thành viên đăng xuất hoặc mất kết nối khi đội **không ở trong trận** thì tự rời đội.
+  - Mất kết nối **trong trận** thì vẫn ở trong đội tới hết trận để còn vào lại được. Hết trận mà vẫn offline thì tự rời đội.
+  - Chỉ mời được người đang online. Người chơi offline thì mọi lời xin vào và lời mời của họ bị hủy.
+- Hết trận, đội **quay về room** với các thành viên còn online, giữ nguyên đội trưởng, và thách đấu tiếp được ngay.
 - Mỗi đội tối đa 3 người, có 3 slot cố định là 0, 1, 2. Mỗi người chỉ ở 1 đội.
 - Có người rời đội thì các slot **không dồn xuống**. Người mới vào đội nhận slot trống có số nhỏ nhất.
 - Người tạo đội là đội trưởng. Đội trưởng chuyển quyền được, chuyển xong thì mất quyền. Lúc nào đội cũng có đúng 1 đội trưởng.
@@ -46,6 +52,7 @@ Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
 ## 4. Thách đấu và sảnh chờ
 - Đội trưởng gửi lời thách đấu, đội trưởng đội kia chấp nhận. Chỉ thách đấu được giữa 2 đội có số người bằng nhau.
 - Lời thách đấu được chấp nhận thì 2 đội vào sảnh chờ.
+- Thành viên của 1 trong 2 đội mất kết nối khi đang ở sảnh chờ thì người đó rời đội và sảnh chờ bị đóng (2 đội không còn cùng số người).
 - Trong sảnh chờ, đội trưởng đội chủ (đội gửi thách đấu) chỉnh được:
   - Thời gian lượt: mặc định 30 giây.
   - Coin ban đầu: mặc định 0.
