@@ -4,10 +4,20 @@
 - Server và client viết bằng C (C11), giao tiếp qua TCP.
 - Client có giao diện GTK3.
 - Server chạy nhiều trận cùng lúc, theo mô hình 1 luồng chính dùng epoll + thread pool cho việc chậm. Message dạng JSON, mỗi message 1 dòng. Chi tiết và lý do chọn: xem [PROTOCOL.md](PROTOCOL.md).
-- Lưu trữ đi qua một lớp `storage` riêng (tài khoản, role, đội). Ban đầu cài bằng file/RAM, sau thay bằng SQLite mà không phải sửa code ở chỗ khác.
-- Trạng thái trận đấu chỉ giữ trong RAM của server (mỗi trận reset).
-- Câu hỏi trắc nghiệm lấy từ file soạn sẵn.
-- Log hoạt động ghi ra file.
+- Dùng SQLite ngay từ đầu. Toàn bộ SQL nằm trong lớp `storage` (`storage.h`/`storage.c`); phần còn lại của server chỉ gọi hàm như `storage_user_create()`, không bao giờ viết SQL trực tiếp.
+- Phân loại dữ liệu:
+
+| Dữ liệu | Để ở đâu | Lý do |
+|---|---|---|
+| Tài khoản, mật khẩu, role, trạng thái khóa | SQLite | Phải còn sau khi server khởi động lại |
+| Đội và thành viên đội | SQLite | Như trên |
+| Câu hỏi trắc nghiệm | SQLite (nạp từ file soạn sẵn ở lần chạy đầu) | Admin thêm/xóa được |
+| Phiên đăng nhập, ai đang online | RAM | Gắn với kết nối TCP, mất kết nối là hết phiên |
+| Lời mời, lời xin vào đội, lời thách đấu | RAM | Dữ liệu tạm |
+| Sảnh chờ, trận đấu, đồng hồ lượt/rương | RAM | Mỗi trận reset; thay đổi liên tục; server sập thì trận cũng hỏng, lưu lại vô ích |
+| Log hoạt động | File | Chỉ ghi nối thêm, không cần truy vấn |
+
+- "RAM" nghĩa là dữ liệu chỉ nằm trong biến/struct C của tiến trình server (ví dụ mảng `Match`), mất khi server tắt.
 
 ## 2. Role và phân quyền
 Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
