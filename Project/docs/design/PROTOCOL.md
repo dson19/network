@@ -79,7 +79,7 @@ Sơ đồ: [architecture.md](diagrams/architecture.md)
 | Thành phần | Chạy ở | Trách nhiệm |
 |---|---|---|
 | **Giao diện GTK** | Client | Hiển thị màn hình. Bật/tắt nút theo trạng thái client. Không tự tính luật chơi |
-| **Net module** | Client | Kết nối, tách dòng, ghép `id` request với response, gửi PING, tự kết nối lại |
+| **Net module** | Client | Kết nối, tách dòng, quản lý request duy nhất đang chờ response, gửi PING, tự kết nối lại |
 | **Client state** | Client | Lưu snapshot mới nhất server gửi xuống. Là nguồn dữ liệu duy nhất để vẽ giao diện |
 | **Event loop** | Server, luồng chính | `epoll_wait` trên mọi socket, `eventfd` của pool và socket lắng nghe. Timeout lấy từ Timer |
 | **Connection** | Server, luồng chính | Mỗi kết nối 1 struct: socket non-blocking, buffer nhận, buffer gửi, thời điểm nhận dữ liệu gần nhất |
@@ -110,27 +110,29 @@ Sơ đồ: [architecture.md](diagrams/architecture.md)
 
 | Trường | Kiểu | Bắt buộc | Mô tả |
 |---|---|---|---|
-| `id` | số nguyên > 0 | Có | Client tự tăng trên mỗi kết nối. Server trả lại nguyên giá trị này |
 | `cmd` | chuỗi | Có | Tên lệnh, ví dụ `LOGIN`, `ATTACK` |
-| *(tham số)* | tùy lệnh | Tùy lệnh | Nằm cùng cấp với `id` và `cmd`. Xem mục 4 |
+| *(tham số)* | tùy lệnh | Tùy lệnh | Nằm cùng cấp với `cmd`. Xem mục 4 |
 
 ```json
-{"id": 40, "cmd": "ATTACK", "target": "minh", "gun": {"type": "LASER", "count": 2}, "missiles": 1}
+{"cmd": "ATTACK", "target": "minh", "gun": {"type": "LASER", "count": 2}, "missiles": 1}
 ```
+
+Mỗi kết nối chỉ có **một request đang chờ response**. Client chỉ gửi request tiếp theo sau khi đã nhận response của request trước; các thao tác mới được khóa hoặc xếp vào hàng đợi cục bộ.
 
 ### 2.3. Response (server → client)
 
 | Trường | Kiểu | Bắt buộc | Mô tả |
 |---|---|---|---|
 | `type` | chuỗi | Có | Luôn là `"res"` |
-| `id` | số nguyên hoặc `null` | Có | `id` của request tương ứng. Là `null` nếu không đọc được `id` (JSON hỏng) |
 | `code` | số nguyên | Có | `1000` là thành công. Các mã khác xem mục 3 |
 | `msg` | chuỗi | Có | Mô tả ngắn để hiển thị hoặc debug |
 | `data` | object | Không | Kết quả trả về, chỉ có khi thành công |
 
 ```json
-{"type": "res", "id": 40, "code": 7002, "msg": "Not your turn"}
+{"type": "res", "code": 7002, "msg": "Not your turn"}
 ```
+
+Response luôn thuộc về request duy nhất đang chờ trên kết nối đó. Trường `type` vẫn cần thiết để client phân biệt response với event tự phát từ server.
 
 ### 2.4. Event (server → client)
 
@@ -274,7 +276,7 @@ Quy định:
 |---|---|---|---|
 | `TEAM_CREATE` | U | `name` | `{"team_id"}` |
 | `TEAM_DELETE` | C, A | `team_id` | |
-| `TEAM_LIST` | U | | `{"teams": [{"team_id", "name", "captain", "size", "state"}]}` |
+| `TEAM_LIST` | U | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"teams": [...], "has_more", "next_offset"}` |
 | `TEAM_MEMBERS` | U | `team_id` | `{"members": [{"slot", "username", "is_captain", "online"}]}` |
 | `TEAM_JOIN_REQUEST` | U | `team_id` | |
 | `TEAM_JOIN_LIST` | C | | `{"requests": ["username", ...]}` |
@@ -346,7 +348,7 @@ Quy định:
 
 **`ATTACK`:**
 ```json
-{"id": 40, "cmd": "ATTACK", "target": "minh",
+{"cmd": "ATTACK", "target": "minh",
  "gun": {"type": "LASER", "count": 2}, "missiles": 1}
 ```
 - `gun` không bắt buộc. Nếu có thì `type` là `"AUTO"` hoặc `"LASER"`, và `count` là số khẩu bắn (với `AUTO` thì `count` luôn bằng 1).
@@ -358,16 +360,24 @@ Quy định:
 ### 4.6. Admin
 | Lệnh | Quyền | Tham số | `data` trả về |
 |---|---|---|---|
-| `ADMIN_USER_LIST` | A | | `{"users": [{"username", "role", "locked", "online"}]}` |
+| `ADMIN_USER_LIST` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"users": [...], "has_more", "next_offset"}` |
 | `ADMIN_LOCK` | A | `username`, `locked` (bool) | |
-| `ADMIN_LOG` | A | `limit` (mặc định 100) | `{"lines": [...]}` |
-| `ADMIN_QUESTION_LIST` | A | | `{"questions": [...]}` |
+| `ADMIN_LOG` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"lines": [...], "has_more", "next_offset"}` |
+| `ADMIN_QUESTION_LIST` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"questions": [...], "has_more", "next_offset"}` |
 | `ADMIN_QUESTION_ADD` | A | `tier`, `question`, `choices` (4 chuỗi), `answer` | `{"question_id"}` |
 | `ADMIN_QUESTION_DELETE` | A | `question_id` | |
 
 - `tier`: `"BRONZE"`, `"SILVER"` hoặc `"GOLD"`.
 - `ADMIN_LOCK` với người đang online: server gửi event `FORCE_LOGOUT` rồi ngắt phiên. Nếu người đó đang trong trận thì tàu tính là bị hạ (HP = 0).
 - Admin không khóa được chính mình hoặc admin khác.
+
+### 4.7. Phân trang danh sách
+
+- `offset` là vị trí phần tử đầu tiên, mặc định `0`; `limit` là số phần tử tối đa muốn nhận, mặc định `20` và không lớn hơn `50`.
+- Response trả `has_more` và `next_offset`; `next_offset` bằng `null` khi đã hết dữ liệu.
+- Để toàn bộ message không vượt quá 8192 byte, server có thể trả ít hơn `limit` phần tử. Nếu vẫn còn dữ liệu thì `has_more` là `true` và client tiếp tục bằng `next_offset`.
+- Thứ tự phải ổn định: đội theo `team_id` tăng dần, tài khoản theo `username`, câu hỏi theo `question_id`, log theo thứ tự từ cũ đến mới.
+- Nếu dữ liệu thay đổi trong lúc tải nhiều trang, client có thể tải lại từ `offset = 0` để tránh hiển thị danh sách lệch.
 
 ---
 
@@ -502,31 +512,31 @@ Mỗi người nhận một snapshot **riêng**:
 ## 8. Ví dụ một phiên
 
 ```
-C: {"id":1,"cmd":"LOGIN","username":"son","password":"123456"}
-S: {"type":"res","id":1,"code":1000,"msg":"OK","data":{"username":"son","role":"PLAYER","team_id":null}}
-C: {"id":2,"cmd":"TEAM_CREATE","name":"Rong Bay"}
-S: {"type":"res","id":2,"code":1000,"msg":"OK","data":{"team_id":5}}
-C: {"id":3,"cmd":"TEAM_INVITE","username":"lan"}
-S: {"type":"res","id":3,"code":1000,"msg":"OK"}
+C: {"cmd":"LOGIN","username":"son","password":"123456"}
+S: {"type":"res","code":1000,"msg":"OK","data":{"username":"son","role":"PLAYER","team_id":null}}
+C: {"cmd":"TEAM_CREATE","name":"Rong Bay"}
+S: {"type":"res","code":1000,"msg":"OK","data":{"team_id":5}}
+C: {"cmd":"TEAM_INVITE","username":"lan"}
+S: {"type":"res","code":1000,"msg":"OK"}
         ... (lan chấp nhận lời mời) ...
 S: {"type":"evt","evt":"INVITE_RESULT","data":{"username":"lan","accepted":true}}
 S: {"type":"evt","evt":"TEAM_UPDATE","data":{"team_id":5,"members":[...]}}
-C: {"id":4,"cmd":"CHALLENGE_SEND","team_id":8}
-S: {"type":"res","id":4,"code":1000,"msg":"OK"}
+C: {"cmd":"CHALLENGE_SEND","team_id":8}
+S: {"type":"res","code":1000,"msg":"OK"}
         ... (đội 8 chấp nhận và bấm sẵn sàng) ...
-C: {"id":5,"cmd":"LOBBY_START"}
-S: {"type":"res","id":5,"code":1000,"msg":"OK"}
+C: {"cmd":"LOBBY_START"}
+S: {"type":"res","code":1000,"msg":"OK"}
 S: {"type":"evt","evt":"MATCH_START","data":{...}}
 S: {"type":"evt","evt":"TURN_START","data":{"player":"son",...}}
 S: {"type":"evt","evt":"CHEST_DROP","data":{"player":"son","tier":"SILVER"}}
-C: {"id":6,"cmd":"CHEST_OPEN"}
-S: {"type":"res","id":6,"code":1000,"msg":"OK"}
+C: {"cmd":"CHEST_OPEN"}
+S: {"type":"res","code":1000,"msg":"OK"}
 S: {"type":"evt","evt":"CHEST_QUESTION","data":{"tier":"SILVER","question":"...","choices":["...","...","...","..."],"can_answer":true,...}}
-C: {"id":7,"cmd":"CHEST_ANSWER","choice":"B"}
-S: {"type":"res","id":7,"code":1000,"msg":"OK"}
+C: {"cmd":"CHEST_ANSWER","choice":"B"}
+S: {"type":"res","code":1000,"msg":"OK"}
 S: {"type":"evt","evt":"CHEST_RESULT","data":{"correct":true,"coin":500,...}}
-C: {"id":8,"cmd":"ATTACK","target":"minh","gun":{"type":"AUTO","count":1}}
-S: {"type":"res","id":8,"code":1000,"msg":"OK"}
+C: {"cmd":"ATTACK","target":"minh","gun":{"type":"AUTO","count":1}}
+S: {"type":"res","code":1000,"msg":"OK"}
 S: {"type":"evt","evt":"ATTACK","data":{"attacker":"son","target":"minh","damage":10,...}}
 S: {"type":"evt","evt":"TURN_START","data":{"player":"minh",...}}
 ```
@@ -538,15 +548,15 @@ S: {"type":"evt","evt":"TURN_START","data":{"player":"minh",...}}
 ### 9.1. Đóng gói và định dạng
 1. Mỗi message là 1 object JSON UTF-8 trên 1 dòng, kết thúc bằng `\r\n`. Bên nhận chấp nhận cả `\n` đơn.
 2. Message dài quá 8192 byte: server trả `2004` rồi **đóng kết nối**. Lý do đóng: không xác định được message tiếp theo bắt đầu ở đâu.
-3. JSON hỏng: server trả `2001` với `id: null` và **giữ kết nối**, vì vẫn tìm được ranh giới dòng tiếp theo.
+3. JSON hỏng: server trả `2001` và **giữ kết nối**, vì vẫn tìm được ranh giới dòng tiếp theo.
 4. Trường thừa mà bên nhận không biết thì bị **bỏ qua**, không báo lỗi. Thiếu trường bắt buộc hoặc sai kiểu thì trả `2003`.
 
 ### 9.2. Request và response
 5. Mỗi request nhận được **đúng 1 response**, trừ khi kết nối bị đóng trước.
-6. `id` là số nguyên dương, client tự tăng trên mỗi kết nối. Client dùng `id` để biết response nào ứng với request nào.
-7. **Thứ tự:** server xử lý request của **cùng một kết nối** theo đúng thứ tự gửi. Khi một request đang chờ thread pool (ví dụ `LOGIN`), các request sau của kết nối đó nằm chờ trong buffer nhận. Vì vậy response luôn về **đúng thứ tự** request. Các kết nối khác không bị ảnh hưởng.
-8. Response của một request luôn được gửi **trước** các event do chính request đó gây ra. Ví dụ: `res` của `ATTACK` đến trước event `ATTACK` và `TURN_START`.
-9. Event có thể đến xen giữa lúc client chờ response của một request khác. Client phải phân biệt bằng trường `type`.
+6. Mỗi kết nối chỉ được có **một request đang chờ response**. Client khóa thao tác hoặc xếp request mới vào hàng đợi cục bộ cho tới khi nhận response trước.
+7. **Thứ tự:** server xử lý request của **cùng một kết nối** theo đúng thứ tự nhận. Nếu client lỗi gửi nối tiếp nhiều request, server không xử lý request sau cho tới khi request trước hoàn tất. Các kết nối khác không bị ảnh hưởng.
+8. Response của một request luôn được đưa vào buffer gửi **trước** các event do chính request đó gây ra. Ví dụ: `res` của `ATTACK` đứng trước event `ATTACK` và `TURN_START`.
+9. Event do kết nối khác hoặc timer tạo ra vẫn có thể đến trong lúc client đang chờ response. Client phân biệt bằng trường `type`: `res` thuộc request duy nhất đang chờ, còn `evt` chuyển cho bộ xử lý event.
 
 ### 9.3. Kiểm tra theo thứ tự cố định
 10. Server kiểm tra theo thứ tự sau và trả lỗi ở bước đầu tiên không đạt:
