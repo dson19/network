@@ -73,7 +73,7 @@
   \item Đáp ứng đầy đủ 23 chức năng của barem (39 điểm).
   \item Server chịu được nhiều kết nối và nhiều trận chạy cùng lúc.
   \item Server là bên quyết định duy nhất: client không tự tính luật chơi.
-  \item Biên dịch và chạy được trên Ubuntu 20.04, GCC 9.4, chuẩn \cmd{-std=c11}.
+  \item Biên dịch và chạy được trên Ubuntu 20.04, GCC 9.4. Mọi phần đụng tới socket Linux viết bằng C chuẩn \cmd{-std=c11} (server và tầng socket của client); giao diện client viết bằng C++ + Qt 5.12 Quick (QML).
 \end{itemize}
 
 % =====================================================================
@@ -81,11 +81,11 @@
 
 \subsection{Đội và trận đấu}
 \begin{itemize}
-  \item Đội hoạt động như \emph{party} khi ghép trận: chỉ tồn tại trong RAM của server, gồm những người đang online. Mỗi đội có 3 slot cố định (0, 1, 2), tối đa 3 người.
+  \item Đội hoạt động như \emph{party} khi ghép trận: chỉ tồn tại trong RAM của server, gồm những người đang online. Mỗi đội có 3 slot cố định (0, 1, 2), tối đa 3 người; slot quyết định thứ tự lượt chơi trong trận.
   \item Thành viên mất kết nối khi đội không ở trong trận thì tự rời đội. Mất kết nối trong trận thì vẫn ở trong đội tới hết trận để còn vào lại được. Chỉ mời được người đang online.
   \item Hết trận, đội quay về room với các thành viên còn online, giữ nguyên đội trưởng, và thách đấu tiếp được ngay.
   \item Chỉ 2 đội cùng số người mới thách đấu được nhau. Đội đang ở sảnh chờ hoặc trong trận thì bị khóa mọi thao tác đội, kể cả với admin.
-  \item Trong sảnh chờ, đội trưởng đội chủ (người tạo phòng) chỉnh thời gian lượt (mặc định 30 giây), thời gian rương (30 giây) và coin ban đầu (0). Đội khách sẵn sàng thì đội chủ mới bắt đầu được.
+  \item Trong sảnh chờ, đội trưởng đội chủ (đội gửi thách đấu) chỉnh thời gian lượt (mặc định 30 giây), thời gian rương (30 giây) và coin ban đầu (0). Đội khách sẵn sàng thì đội chủ mới bắt đầu được.
   \item Mỗi trận reset toàn bộ: coin, trang bị, HP, đạn. Coin tính riêng từng người.
 \end{itemize}
 
@@ -98,10 +98,10 @@ Tàu khởi đầu có HP 1000, Amor 0 và 1 pháo tự động với 50 viên �
 \textbf{Trang bị} & \textbf{Giá (coin)} & \textbf{Thông số} & \textbf{Ghi chú} \\
 \midrule
 Pháo tự động & có sẵn & Damage 10/viên & Đúng 1 khẩu, không bỏ, không mua thêm. Thùng đạn 100 coin/50 viên \\
-Pháo laze & 1000/khẩu & Damage 100/phát & Tối đa 3 khẩu (pháo tự động chiếm 1 trong 4 slot). Bộ nguồn 100 coin/10 phát \\
+Pháo laze & 1000/khẩu & Damage 100/phát & Tối đa 3 khẩu: tàu có 4 chỗ lắp pháo, 1 chỗ cho pháo tự động, 3 chỗ cho laze. Bộ nguồn 100 coin/10 phát \\
 Tên lửa & 2000/quả & Damage 800 & Dùng 1 lần, không chiếm slot pháo, mang tối đa 4 quả \\
 Giáp cơ bản & 1000 & Amor 500 & Tối đa 2 lớp, cộng dồn \\
-Giáp tăng cường & 2000 & Amor 1500 & Lớp mua sau bị trừ trước \\
+Giáp tăng cường & 2000 & Amor 1500 & Tối đa 2 lớp, cộng dồn \\
 Sửa tàu & 1/HP & -- & Tối đa 1000 HP; tàu đã chết không sửa được \\
 \bottomrule
 \end{tabularx}
@@ -109,67 +109,20 @@ Sửa tàu & 1/HP & -- & Tối đa 1000 HP; tàu đã chết không sửa đư�
 \end{table}
 
 \begin{itemize}
-  \item \textbf{Đạn:} mỗi khẩu có băng riêng; kho thùng đạn và bộ nguồn dùng chung cho cùng loại. Reload làm được bất cứ lúc nào, mỗi lần lấy 1 thùng hoặc 1 bộ, số đạn còn trong băng cũ bị bỏ. Băng hết thì tự reload nếu kho còn.
-  \item \textbf{Giáp:} đang đủ 2 lớp mà mua thêm thì lớp còn ít Amor hơn bị bỏ. Lớp về 0 Amor thì bị gỡ.
+  \item \textbf{Đạn:} \emph{băng} là số đạn đang lắp trong một khẩu, \emph{kho} là số thùng đạn/bộ nguồn dự trữ. Mỗi khẩu có băng riêng; kho dùng chung cho cùng loại pháo. Reload làm được bất cứ lúc nào, mỗi lần lấy 1 thùng hoặc 1 bộ, số đạn còn trong băng cũ bị bỏ. Băng hết thì tự reload nếu kho còn.
+  \item \textbf{Giáp:} lớp mua sau nằm ngoài nên bị trừ trước. Đang đủ 2 lớp mà mua thêm thì lớp còn ít Amor hơn bị bỏ. Lớp về 0 Amor thì bị gỡ.
   \item \textbf{Sát thương:} mỗi điểm Damage trừ 1 Amor, bắt đầu từ lớp ngoài; phần dư trừ vào HP. HP về 0 thì tàu bị hạ, không hồi sinh.
   \item \textbf{Tấn công:} chọn 1 mục tiêu, sau đó chọn phần pháo (chỉ 1 loại: tự động hoặc laze, chọn số khẩu), phần tên lửa (chọn số quả), hoặc cả hai. Không được trộn 2 loại pháo.
 \end{itemize}
 
 \subsection{Lượt và rương kho báu}
 \begin{itemize}
-  \item Thứ tự lượt A0 $\rightarrow$ B0 $\rightarrow$ A1 $\rightarrow$ B1 $\rightarrow$ A2 $\rightarrow$ B2, bỏ qua tàu đã chết. Trong lượt của mình: mua, sửa, reload, mở rương; bấm tấn công là hết lượt. Ngoài lượt chỉ được reload.
+  \item Thứ tự lượt A0 $\rightarrow$ B0 $\rightarrow$ A1 $\rightarrow$ B1 $\rightarrow$ A2 $\rightarrow$ B2 (A là đội chủ, B là đội khách, số là slot), bỏ qua tàu đã chết. Trong lượt của mình: mua, sửa, reload, mở rương; bấm tấn công là hết lượt. Ngoài lượt chỉ được reload.
   \item Hết giờ lượt hoặc mất kết nối thì bị bỏ qua lượt.
   \item Mỗi lượt server thả 1 rương: đồng 60\% (100 coin), bạc 30\% (500), vàng 10\% (2000). Mở rương là không bắt buộc.
   \item Mở rương thì đồng hồ lượt tạm dừng và rương có đồng hồ riêng. Trong lúc đó chỉ được trả lời. Câu hỏi trắc nghiệm, trả lời 1 lần: đúng thì nhận coin, sai thì mất rương. Đồng đội chỉ được xem câu hỏi; đối phương không thấy.
   \item Đội bị hạ hết tàu thì thua. Cả đội offline liên tục 120 giây thì thua do bỏ cuộc.
 \end{itemize}
-
-% =====================================================================
-\section{Kiến trúc hệ thống}
-
-\subsection{Mô hình server: 1 luồng chính epoll + thread pool}
-\begin{itemize}
-  \item \textbf{Luồng chính} chạy \cmd{epoll\_wait}, nhận/gửi trên mọi socket non-blocking, và là luồng \emph{duy nhất} được đọc/sửa state (phiên, đội, sảnh chờ, trận, đồng hồ).
-  \item \textbf{Thread pool} chỉ làm việc chậm: hash mật khẩu, đọc SQLite, đọc file log. \textbf{1 luồng DB writer} ghi DB và ghi log theo đúng thứ tự FIFO. Kết quả được trả về luồng chính qua hàng đợi và \cmd{eventfd}.
-  \item \textbf{Đồng hồ} lượt, rương, idle, bỏ cuộc nằm trong một min-heap; mốc gần nhất làm timeout của \cmd{epoll\_wait}. Không dùng \cmd{sleep} hay luồng timer riêng.
-\end{itemize}
-
-\subsection{Các quyết định thiết kế khác}
-\begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}l L@{}}
-\toprule
-\textbf{Vấn đề} & \textbf{Lựa chọn} \\
-\midrule
-Định dạng message & JSON (thư viện cJSON) \\
-Truyền dòng & Mỗi message 1 dòng JSON, kết thúc bằng \cmd{\textbackslash r\textbackslash n} \\
-Đồng bộ client & Event kèm snapshot toàn bộ trạng thái trận \\
-Client & Socket gắn vào main loop của GTK, 1 luồng \\
-Lưu trữ & SQLite, chế độ WAL \\
-\bottomrule
-\end{tabularx}
-\caption{Các quyết định kiến trúc}
-\end{table}
-
-\subsection{Lưu trữ}
-\begin{itemize}
-  \item SQLite chỉ có 2 bảng: \cmd{users} (tên đăng nhập, hash PBKDF2 kèm salt, role, trạng thái khóa) và \cmd{questions} (tier, câu hỏi, 4 lựa chọn, đáp án). Đội (party), phiên, sảnh chờ và trận đang chơi chỉ nằm trong RAM; kết quả trận được ghi vào log.
-  \item Lúc khởi động, server nạp tài khoản (trừ hash mật khẩu) và câu hỏi lên RAM; luồng chính chỉ đọc từ RAM. Ghi theo kiểu \emph{RAM trước, DB sau} qua 1 luồng DB writer chạy FIFO, nên luồng chính không bao giờ chờ ổ đĩa. Riêng \cmd{REGISTER} phải chờ DB cấp \cmd{user\_id} nội bộ.
-  \item Admin đầu tiên được tạo trên máy server bằng \cmd{./server --create-admin <username>}; câu hỏi soạn sẵn nạp từ \cmd{data/questions.txt}.
-\end{itemize}
-
-\subsection{Ghi log}
-Server ghi lại các sự kiện quan trọng để quản trị viên theo dõi hoạt động và hỗ trợ tìm lỗi. Mỗi bản ghi nằm trên một dòng, gồm thời gian ISO-8601, mức độ, nhóm sự kiện, tên sự kiện và các cặp \cmd{khóa=giá\_trị} liên quan.
-
-\begin{itemize}
-  \item Các nhóm log chính gồm \cmd{NET}, \cmd{AUTH}, \cmd{TEAM}, \cmd{LOBBY}, \cmd{MATCH}, \cmd{CHEST}, \cmd{ADMIN}, \cmd{DB} và \cmd{SYS}.
-  \item Các sự kiện cần ghi gồm kết nối/ngắt kết nối, đăng nhập, thao tác đội, bắt đầu/kết thúc trận, tấn công, mở rương, thao tác quản trị và lỗi cơ sở dữ liệu hoặc hệ thống.
-  \item Luồng chính chỉ tạo bản ghi và đưa vào hàng đợi; luồng DB writer ghi ra file theo thứ tự FIFO. Nhờ đó thao tác ổ đĩa không chặn việc xử lý kết nối và luật chơi.
-  \item Log không chứa mật khẩu, hash mật khẩu, salt hoặc nội dung nhạy cảm khác. Quản trị viên đọc log thông qua lệnh \cmd{ADMIN\_LOG}.
-\end{itemize}
-
-\begin{lstlisting}
-2026-11-17T10:26:10.777+07:00 INFO MATCH ATTACK match=3 from=son to=minh damage=1000
-\end{lstlisting}
 
 % =====================================================================
 \section{Giao thức}
@@ -186,7 +139,7 @@ Request \newline (C$\rightarrow$S) & \cmd{cmd}, tham số & \cmd{cmd} xác đị
 \{"cmd":"ATTACK",\newline "target":"minh",\newline "gun":\{"type":"LASER",\newline \ \ "count":2\},\newline "missiles":1\} \\
 \midrule
 Response \newline (S$\rightarrow$C) & \cmd{type}, \cmd{code}, \cmd{msg}, \cmd{data} & Đúng 1 response cho request đang chờ; \cmd{code} thuộc nhóm \cmd{1xxx} thành công, \cmd{2xxx} định dạng, \cmd{3xxx} tài khoản/phiên, \cmd{4xxx} phân quyền, \cmd{5xxx} đội, \cmd{6xxx} thách đấu/sảnh chờ, \cmd{7xxx} trong trận, \cmd{9xxx} lỗi server &
-\{"type":"res",\newline "code":"1xxx","msg":"OK"\} \\
+\{"type":"res",\newline "code":1000,"msg":"OK"\} \\
 \midrule
 Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server tự gửi; event trong trận kèm \cmd{state} &
 \{"type":"evt",\newline "evt":"ATTACK",\newline "data":\{"attacker":"son",\newline \ \ "target":"minh",\newline \ \ "damage":1000,...\}\} \\
@@ -196,39 +149,82 @@ Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server t�
 \end{table}
 
 \subsection{Mã kết quả}
-\begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}l l L@{}}
+\begin{longtable}{@{}l l P{0.52\linewidth}@{}}
 \toprule
-\textbf{Nhóm} & \textbf{Khoảng} & \textbf{Ví dụ} \\
+\textbf{Mã} & \textbf{Tên} & \textbf{Ý nghĩa} \\
+\midrule\endfirsthead
+\toprule
+\textbf{Mã} & \textbf{Tên} & \textbf{Ý nghĩa} \\
+\midrule\endhead
+\multicolumn{3}{@{}l}{\textit{Thành công (1xxx)}} \\
+\cmd{1000} & \cmd{OK} & Thành công \\
 \midrule
-Thành công & 1xxx & OK \\
-Định dạng & 2xxx & JSON hỏng, lệnh không tồn tại, thiếu tham số, message quá dài \\
-Tài khoản, phiên & 3xxx & Chưa đăng nhập, sai mật khẩu, tài khoản bị khóa, trùng tên \\
-Phân quyền & 4xxx & Không đủ quyền, không phải đội trưởng, không phải admin \\
-Đội & 5xxx & Đội đầy, đã có đội, đội đang trong trận, người được mời đang offline \\
-Thách đấu, sảnh chờ & 6xxx & Lệch số người, đội khách chưa sẵn sàng, setting sai \\
-Trong trận & 7xxx & Chưa tới lượt, thiếu coin, hết slot, trộn pháo, đang mở rương \\
-Server & 9xxx & Lỗi nội bộ hoặc chế độ chỉ đọc, server quá tải \\
+\multicolumn{3}{@{}l}{\textit{Định dạng (2xxx)}} \\
+\cmd{2001} & \cmd{BAD\_FORMAT} & Không phải JSON hợp lệ \\
+\cmd{2002} & \cmd{UNKNOWN\_CMD} & Lệnh không tồn tại \\
+\cmd{2003} & \cmd{BAD\_PARAM} & Thiếu tham số hoặc sai kiểu \\
+\cmd{2004} & \cmd{MSG\_TOO\_LONG} & Message dài quá 8192 byte \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Tài khoản, phiên (3xxx)}} \\
+\cmd{3001} & \cmd{NOT\_LOGGED\_IN} & Chưa đăng nhập \\
+\cmd{3002} & \cmd{ALREADY\_LOGGED\_IN} & Kết nối này đã đăng nhập rồi \\
+\cmd{3003} & \cmd{WRONG\_CREDENTIALS} & Sai tài khoản hoặc mật khẩu \\
+\cmd{3004} & \cmd{ACCOUNT\_LOCKED} & Tài khoản bị khóa \\
+\cmd{3005} & \cmd{USERNAME\_TAKEN} & Tên đăng nhập đã tồn tại \\
+\cmd{3006} & \cmd{INVALID\_USERNAME} & Tên đăng nhập không hợp lệ \\
+\cmd{3007} & \cmd{INVALID\_PASSWORD} & Mật khẩu không đạt yêu cầu \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Phân quyền (4xxx)}} \\
+\cmd{4001} & \cmd{FORBIDDEN} & Không đủ quyền \\
+\cmd{4002} & \cmd{NOT\_CAPTAIN} & Chỉ đội trưởng được làm \\
+\cmd{4003} & \cmd{NOT\_ADMIN} & Chỉ admin được làm \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Đội (5xxx)}} \\
+\cmd{5001} & \cmd{TEAM\_NOT\_FOUND} & Không tìm thấy đội \\
+\cmd{5002} & \cmd{TEAM\_NAME\_TAKEN} & Tên đội đã tồn tại \\
+\cmd{5003} & \cmd{TEAM\_FULL} & Đội đã đủ 3 người \\
+\cmd{5004} & \cmd{ALREADY\_IN\_TEAM} & Người chơi đã ở trong một đội \\
+\cmd{5005} & \cmd{NOT\_IN\_TEAM} & Người chơi chưa ở đội nào \\
+\cmd{5006} & \cmd{TEAM\_IN\_MATCH} & Đội đang trong sảnh chờ hoặc trong trận, thao tác bị khóa \\
+\cmd{5007} & \cmd{USER\_NOT\_FOUND} & Không tìm thấy người chơi \\
+\cmd{5008} & \cmd{NOT\_A\_MEMBER} & Người này không ở trong đội \\
+\cmd{5009} & \cmd{REQUEST\_NOT\_FOUND} & Không có lời xin vào hoặc lời mời tương ứng \\
+\cmd{5010} & \cmd{ALREADY\_PENDING} & Đã gửi lời xin vào hoặc lời mời trước đó rồi \\
+\cmd{5011} & \cmd{USER\_OFFLINE} & Người được mời đang offline \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Thách đấu, sảnh chờ (6xxx)}} \\
+\cmd{6001} & \cmd{TEAM\_SIZE\_MISMATCH} & 2 đội không cùng số người \\
+\cmd{6002} & \cmd{CHALLENGE\_NOT\_FOUND} & Không có lời thách đấu tương ứng \\
+\cmd{6003} & \cmd{SAME\_TEAM} & Không thể thách đấu chính đội mình \\
+\cmd{6004} & \cmd{NOT\_IN\_LOBBY} & Không ở trong sảnh chờ \\
+\cmd{6005} & \cmd{OPPONENT\_NOT\_READY} & Đội khách chưa sẵn sàng \\
+\cmd{6006} & \cmd{INVALID\_SETTING} & Giá trị setting ngoài khoảng cho phép \\
+\cmd{6007} & \cmd{ONLY\_HOST} & Chỉ đội chủ được làm \\
+\cmd{6008} & \cmd{ONLY\_GUEST} & Chỉ đội khách được làm \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Trong trận (7xxx)}} \\
+\cmd{7001} & \cmd{NOT\_IN\_MATCH} & Không ở trong trận \\
+\cmd{7002} & \cmd{NOT\_YOUR\_TURN} & Chưa tới lượt \\
+\cmd{7003} & \cmd{SHIP\_DESTROYED} & Tàu của mình đã bị hạ \\
+\cmd{7004} & \cmd{NOT\_ENOUGH\_COIN} & Không đủ coin \\
+\cmd{7005} & \cmd{SLOT\_FULL} & Hết slot (pháo, tên lửa) \\
+\cmd{7006} & \cmd{INVALID\_TARGET} & Mục tiêu không hợp lệ (đồng đội, đã chết, không tồn tại) \\
+\cmd{7007} & \cmd{INVALID\_ATTACK} & Trộn 2 loại pháo, số lượng sai, hoặc không chọn vũ khí nào \\
+\cmd{7008} & \cmd{NO\_AMMO} & Không đủ đạn để bắn với số lượng đã chọn \\
+\cmd{7009} & \cmd{NO\_RESERVE} & Hết thùng đạn hoặc bộ nguồn để reload \\
+\cmd{7010} & \cmd{HP\_FULL} & HP đã đầy \\
+\cmd{7011} & \cmd{NO\_CHEST} & Lượt này không có rương hoặc rương đã mở \\
+\cmd{7012} & \cmd{CHEST\_ACTIVE} & Đang mở rương, chỉ được trả lời câu hỏi \\
+\cmd{7013} & \cmd{CHEST\_EXPIRED} & Hết giờ trả lời rương \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Server (9xxx)}} \\
+\cmd{9001} & \cmd{INTERNAL\_ERROR} & Lỗi phía server, hoặc server đang ở chế độ chỉ đọc do lỗi ghi DB \\
+\cmd{9002} & \cmd{SERVER\_BUSY} & Server quá tải, thử lại sau \\
 \bottomrule
-\end{tabularx}
-\caption{Các nhóm mã kết quả}
-\end{table}
+\caption{Mã kết quả}\label{tab:codes}
+\end{longtable}
 
 \subsection{Chi tiết lệnh}
-
-Mọi request có trường bắt buộc \cmd{cmd} (chuỗi). Tham số của lệnh nằm \textbf{cùng cấp} với \cmd{cmd}, không bọc trong \cmd{data}. Mọi response có \cmd{type="res"}, \cmd{code}, \cmd{msg}; trường \cmd{data} chỉ xuất hiện khi lệnh thành công và có dữ liệu cần trả về. Ký hiệu ``--'' trong bảng nghĩa là không có tham số hoặc không có \cmd{data}.
-
-Các kiểu dùng chung:
-\begin{itemize}
-  \item \cmd{username}: chuỗi 3--20 ký tự, chỉ gồm chữ, số và dấu gạch dưới; \cmd{password}: chuỗi 6--64 ký tự.
-  \item \cmd{team\_id}, \cmd{lobby\_id}, \cmd{question\_id}: số nguyên dương; \cmd{accept}, \cmd{ready}, \cmd{locked}: boolean JSON \cmd{true}/\cmd{false}.
-  \item \cmd{role}: \cmd{"PLAYER"} hoặc \cmd{"ADMIN"}; trạng thái người chơi/đội: \cmd{"IDLE"}, \cmd{"LOBBY"} hoặc \cmd{"IN\_MATCH"}.
-  \item \cmd{member}: object gồm \cmd{slot:int}, \cmd{username:string}, \cmd{is\_captain:bool}, \cmd{online:bool}.
-  \item \cmd{settings}: object gồm \cmd{turn\_time:int} (10--120 giây), \cmd{chest\_time:int} (10--120 giây), \cmd{start\_coin:int} (0--100000).
-  \item Các lệnh trả danh sách dài dùng \cmd{offset:int} (mặc định 0) và \cmd{limit:int} (mặc định 20, tối đa 50). Response trả thêm \cmd{has\_more:bool} và \cmd{next\_offset:int|null}.
-\end{itemize}
-
-Để mọi message luôn nhỏ hơn giới hạn 8192 byte, server có thể trả ít hơn \cmd{limit} phần tử nếu thêm phần tử tiếp theo làm response vượt giới hạn. Khi đó \cmd{has\_more=true} và client dùng \cmd{next\_offset} cho request kế tiếp. Quy tắc này áp dụng cho \cmd{TEAM\_LIST}, \cmd{ADMIN\_USER\_LIST}, \cmd{ADMIN\_LOG} và \cmd{ADMIN\_QUESTION\_LIST}. Thứ tự phân trang phải cố định: đội theo \cmd{team\_id} tăng dần, người dùng theo \cmd{username}, câu hỏi theo \cmd{question\_id}, log theo thứ tự dòng từ cũ đến mới. Nếu dữ liệu thay đổi trong lúc đang phân trang, client có thể tải lại từ \cmd{offset=0}.
 
 \begin{longtable}{@{}P{0.18\linewidth} J{0.37\linewidth} J{0.37\linewidth}@{}}
 \toprule
@@ -420,7 +416,7 @@ Các kiểu dùng chung:
 
 \normalfont Đọc log \newline \cmd{ADMIN\_LOG} &
 \{"cmd":"ADMIN\_LOG","offset":0,"limit":20\} &
-\{"type":"res","code":1000,"msg":"OK",\newline "data":\{"lines":["2026-11-18 INFO AUTH LOGIN user=son"],"has\_more":false,"next\_offset":null\}\} \\
+\{"type":"res","code":1000,"msg":"OK",\newline "data":\{"lines":["[18/11/2026 10:22:31]\$192.168.1.5:51234\$son\$\{\textbackslash"cmd\textbackslash":\textbackslash"LOGOUT\textbackslash"\}\$1000 OK"],"has\_more":false,"next\_offset":null\}\} \\
 \midrule
 
 \normalfont Danh sách câu hỏi \newline \cmd{ADMIN\_QUESTION\_LIST} &
@@ -440,11 +436,78 @@ Các kiểu dùng chung:
 \caption{Request và response message của toàn bộ lệnh}\label{tab:commands-detail}
 \end{longtable}
 
-Trong bảng chi tiết lệnh, response thành công dùng mã cụ thể \cmd{1000}. Các ký hiệu \cmd{1xxx}, \cmd{2xxx}, \ldots{} ở bảng nhóm mã chỉ biểu diễn từng nhóm kết quả; response lỗi giữ nguyên envelope, dùng một mã cụ thể thuộc nhóm tương ứng và thường không có \cmd{data}. \cmd{BUY.item} nhận một trong các giá trị \cmd{AMMO\_BOX}, \cmd{LASER}, \cmd{POWER\_PACK}, \cmd{MISSILE}, \cmd{ARMOR\_BASIC}, \cmd{ARMOR\_ADVANCED}; riêng hai loại giáp yêu cầu \cmd{qty=1}. \cmd{tier} nhận \cmd{"BRONZE"}, \cmd{"SILVER"} hoặc \cmd{"GOLD"}. Với \cmd{ATTACK}, phải có ít nhất \cmd{gun} hoặc \cmd{missiles>0}; \cmd{AUTO} luôn có \cmd{count=1}.
+% =====================================================================
+\section{Quản lý kết nối và phiên}\label{sec:session}
+
+\subsection{Mô hình phục vụ kết nối: 1 luồng chính epoll + thread pool}
+Server chạy 3 loại luồng, mỗi loại một việc:
+\begin{itemize}
+  \item \textbf{Luồng chính} theo dõi cùng lúc mọi kết nối bằng \textbf{epoll}: kết nối nào có dữ liệu đến thì epoll báo cho luồng chính xử lý. Luồng chính không phải ngồi chờ riêng từng client, nên một luồng phục vụ được rất nhiều client. Đây cũng là luồng \emph{duy nhất} được sửa dữ liệu của game (phiên, đội, sảnh chờ, trận, đồng hồ). Không có 2 luồng cùng sửa một dữ liệu nên không cần khóa và không có lỗi tranh chấp dữ liệu giữa các luồng.
+  \item \textbf{Thread pool} gồm 2 luồng (đổi được bằng khóa \cmd{read\_workers} trong \cmd{server.conf}), làm các việc chậm cần trả kết quả: kiểm tra mật khẩu (mỗi lần mất khoảng 50--100 ms), đọc cơ sở dữ liệu, đọc file log. Nhờ vậy luồng chính không bị đứng chờ trong lúc các việc này chạy.
+  \item \textbf{1 luồng DB writer} làm mọi việc ghi: ghi cơ sở dữ liệu và ghi log. Chỉ có 1 luồng ghi nên dữ liệu luôn được ghi xuống đĩa đúng thứ tự đã thay đổi.
+\end{itemize}
+
+Cách các luồng phối hợp:
+\begin{itemize}
+  \item Luồng chính giao việc cho pool hoặc DB writer bằng cách đẩy vào một hàng đợi. Làm xong, luồng kia đẩy kết quả vào hàng đợi kết quả và báo cho luồng chính xử lý tiếp. Hàng đợi việc đầy thì server trả mã \cmd{9002} (server quá tải).
+  \item Socket để ở chế độ \textbf{không chặn} (non-blocking): đọc hoặc gửi dữ liệu không bao giờ bắt luồng chính đứng chờ. Chưa có dữ liệu thì luồng chính làm việc khác. Dữ liệu chưa gửi hết được giữ trong \emph{buffer gửi} riêng của kết nối và gửi tiếp khi mạng sẵn sàng.
+  \item \textbf{Đồng hồ} lượt, rương, idle và bỏ cuộc không dùng luồng đếm giờ riêng. Luồng chính giữ danh sách các mốc hết giờ, sắp theo thời gian; trong lúc chờ dữ liệu mạng, nó chỉ chờ tới mốc gần nhất rồi tự thức dậy xử lý mốc đó.
+\end{itemize}
+
+Một request được xử lý qua các bước:
+\begin{enumerate}
+  \item Có dữ liệu đến từ một client. Luồng chính đọc hết phần đang có vào \emph{buffer nhận} của kết nối đó.
+  \item TCP có thể giao nửa message, hoặc nhiều message dính liền nhau, nên server tách buffer nhận thành từng message theo dấu xuống dòng \cmd{\textbackslash r\textbackslash n}. Message dài quá 8192 byte thì server trả mã \cmd{2004} rồi đóng kết nối.
+  \item Nếu request trước của kết nối này vẫn đang chờ pool xử lý, các message mới tạm nằm trong buffer nhận. Nhờ vậy request trên cùng một kết nối luôn được xử lý đúng thứ tự gửi.
+  \item Đọc JSON, kiểm tra theo thứ tự cố định (mục~\ref{sec:check-order}), rồi gọi hàm xử lý của lệnh.
+  \item Hàm xử lý cập nhật dữ liệu trong RAM, xếp response rồi các event vào buffer gửi của những kết nối liên quan. Thay đổi cần lưu lâu dài và dòng log được đẩy sang DB writer.
+  \item Luồng chính gửi dữ liệu trong buffer gửi; phần chưa gửi được sẽ gửi tiếp khi mạng sẵn sàng.
+\end{enumerate}
+
+\subsection{Đặc tả}
+\begin{itemize}
+  \item Một kết nối tại một thời điểm chỉ đăng nhập được 1 tài khoản. Gửi \cmd{LOGIN} hoặc \cmd{REGISTER} trên kết nối đã đăng nhập thì bị từ chối với mã \cmd{3002}.
+  \item \textbf{Mỗi tài khoản chỉ có 1 phiên.} Đăng nhập đúng mật khẩu ở client khác thì phiên cũ bị thay thế: kết nối cũ nhận \cmd{FORCE\_LOGOUT} với \cmd{reason} là \cmd{REPLACED} rồi bị đóng.
+  \item Chỉ 3 lệnh dùng được khi chưa đăng nhập: \cmd{PING}, \cmd{REGISTER}, \cmd{LOGIN}. Mọi lệnh khác gửi khi chưa đăng nhập nhận mã \cmd{3001}.
+  \item \cmd{REGISTER} chỉ tạo tài khoản, không tự đăng nhập. Tên đăng nhập dài 3--20 ký tự, chỉ gồm chữ, số và \cmd{\_}, không phân biệt hoa thường (\cmd{Son} trùng với \cmd{son}). Mật khẩu dài 6--64 ký tự.
+  \item \cmd{LOGOUT} chỉ hủy phiên, kết nối vẫn mở để đăng nhập tài khoản khác.
+  \item Phiên còn kết thúc khi: client đóng hoặc mất kết nối, kết nối im lặng quá 60 giây, phiên bị thay thế, admin khóa tài khoản bằng \cmd{ADMIN\_LOCK}, hoặc server tắt.
+  \item Đăng nhập lại khi trận của mình còn đang diễn ra thì được đưa thẳng về trận.
+\end{itemize}
+
+\subsection{Vòng đời của một kết nối}
+\begin{table}[H]\centering\small
+\begin{tabularx}{\linewidth}{@{}P{0.16\linewidth} P{0.22\linewidth} L P{0.15\linewidth}@{}}
+\toprule
+\textbf{Trạng thái} & \textbf{Sự kiện} & \textbf{Server xử lý} & \textbf{Trạng thái mới} \\
+\midrule
+-- & Client kết nối tới server & Tạo kết nối mới, đưa vào danh sách epoll theo dõi & \cmd{CONNECTED} \\
+\cmd{CONNECTED} & Nhận \cmd{LOGIN} hợp lệ & Đánh dấu kết nối đang chờ pool, đẩy job kiểm tra mật khẩu sang pool & \cmd{AUTH\_PENDING} \\
+\cmd{AUTH\_PENDING} & Pool báo sai mật khẩu hoặc tài khoản bị khóa & Trả \cmd{3003} hoặc \cmd{3004}, bỏ đánh dấu chờ & \cmd{CONNECTED} \\
+\cmd{AUTH\_PENDING} & Pool báo đúng & Thay phiên cũ nếu có, tạo phiên, trả \cmd{1000} & \cmd{LOGGED\_IN} \\
+\cmd{AUTH\_PENDING} & Mất kết nối & Đóng kết nối; kết quả từ pool về sau đó bị bỏ vì kết nối không còn & \cmd{CLOSED} \\
+\cmd{LOGGED\_IN} & \cmd{LOGOUT} & Hủy phiên, trả \cmd{1000} & \cmd{CONNECTED} \\
+\cmd{LOGGED\_IN} & Bị thay thế, bị khóa, server tắt & Gửi \cmd{FORCE\_LOGOUT}, hủy phiên, đóng kết nối & \cmd{CLOSED} \\
+Bất kỳ & Client đóng kết nối, mất mạng, 60 giây không nhận được gì, message quá dài, client nhận quá chậm & Hủy phiên nếu có, đóng kết nối & \cmd{CLOSED} \\
+\bottomrule
+\end{tabularx}
+\caption{Chuyển trạng thái của kết nối}
+\end{table}
+
+\subsection{Thứ tự kiểm tra request}\label{sec:check-order}
+Server kiểm tra theo thứ tự cố định và trả lỗi ở bước đầu tiên không đạt:
+\begin{enumerate}
+  \item Định dạng hợp lệ (\cmd{2001}--\cmd{2004}).
+  \item Đã đăng nhập (\cmd{3001}).
+  \item Đủ quyền theo role (\cmd{4xxx}).
+  \item Trạng thái hiện tại cho phép làm lệnh này, ví dụ đội không ở sảnh chờ hay trong trận, đang tới lượt mình, không đang mở rương (\cmd{5006}, \cmd{6xxx}, \cmd{7001}--\cmd{7003}, \cmd{7012}).
+  \item Tham số hợp lệ và đủ tài nguyên, ví dụ đủ coin, còn đạn, mục tiêu hợp lệ (\cmd{2003} và các mã còn lại).
+\end{enumerate}
+Ví dụ gửi \cmd{TEAM\_CREATE} thiếu \cmd{name} khi chưa đăng nhập thì nhận \cmd{3001}, không phải \cmd{2003}. Lệnh bị từ chối không làm thay đổi gì.
 
 \subsection{Thứ tự response và event}
 
-Mỗi kết nối chỉ được có \textbf{một request đang chờ response}. Client khóa thao tác hoặc xếp request mới vào hàng đợi cục bộ cho tới khi nhận response trước; server cũng xử lý request trên cùng một kết nối theo đúng thứ tự nhận. Mỗi request nhận đúng một response; response được đưa vào buffer gửi \textbf{trước} mọi event do chính request đó tạo ra. Cách này giúp client bỏ trạng thái ``đang chờ'' trước khi cập nhật giao diện từ event mà không cần trường \cmd{id}.
+Mỗi kết nối chỉ được có \textbf{một request đang chờ response}. Client khóa thao tác hoặc xếp request mới vào hàng đợi cục bộ cho tới khi nhận response trước; server cũng xử lý request trên cùng một kết nối theo đúng thứ tự nhận. Mỗi request nhận đúng một response; response được đưa vào buffer gửi \textbf{trước} mọi event do chính request đó tạo ra. Cách này giúp client biết response nào thuộc request nào mà không cần đánh số từng request.
 
 \begin{itemize}
   \item \cmd{ATTACK} thành công: response \cmd{ATTACK} $\rightarrow$ event \cmd{ATTACK} $\rightarrow$ \cmd{SHIP\_DESTROYED} nếu có $\rightarrow$ \cmd{MATCH\_END} hoặc \cmd{TURN\_START}.
@@ -453,161 +516,167 @@ Mỗi kết nối chỉ được có \textbf{một request đang chờ response}
   \item Event do kết nối khác hoặc timer tạo ra có thể đến trong lúc client đang chờ response. Client phân biệt bằng \cmd{type}: \cmd{"res"} thuộc request duy nhất đang chờ, còn \cmd{"evt"} được chuyển cho bộ xử lý event.
 \end{itemize}
 
-\subsection{Chi tiết event}
+\subsection{Các lệnh quản lý phiên}
+Các response lỗi dưới đây áp dụng cho \emph{mọi} request:
 
-Event là thông báo chủ động từ server nên không có request tương ứng. Mọi event đều có dạng \cmd{type="evt"}, \cmd{evt:string} và \cmd{data:object}. Trong các schema dưới đây, \cmd{member} và \cmd{settings} dùng kiểu đã định nghĩa ở mục trước; \cmd{team\_summary:object} gồm \cmd{team\_id:int}, \cmd{name:string} và \cmd{members:array<member>}.
-
-\cmd{state:object} là snapshot trận được tạo riêng cho từng người nhận, gồm:
-\begin{itemize}
-  \item \cmd{match\_id:int}; \cmd{turn:object} gồm \cmd{player:string}, \cmd{deadline\_ms:int}, \cmd{paused:bool}.
-  \item \cmd{chest:object|null}; nếu khác \cmd{null} thì gồm \cmd{tier:string} và \cmd{opened:bool}.
-  \item \cmd{teams:array<object>}; mỗi đội gồm \cmd{team\_id:int}, \cmd{name:string}, \cmd{ships:array<ship>}.
-  \item \cmd{ship} luôn có \cmd{username:string}, \cmd{slot:int}, \cmd{online:bool}, \cmd{alive:bool}, \cmd{hp:int}, \cmd{armor:array<object>} và \cmd{missiles:int}. Mỗi lớp giáp gồm \cmd{type:string}, \cmd{amor:int}.
-  \item Với tàu cùng đội, \cmd{ship} có thêm \cmd{coin:int}, \cmd{auto:object} gồm \cmd{mag:int}, \cmd{boxes:int}; \cmd{lasers:array<object>} với mỗi phần tử có \cmd{mag:int}; và \cmd{power\_packs:int}. Với đối phương, các trường này bị ẩn và thay bằng \cmd{laser\_count:int}.
-\end{itemize}
-
-\begin{longtable}{@{}P{0.24\linewidth} J{0.68\linewidth}@{}}
+\begin{longtable}{@{}P{0.27\linewidth} J{0.67\linewidth}@{}}
 \toprule
-\textbf{Sự kiện} & \multicolumn{1}{P{0.68\linewidth}}{\textbf{Event message}} \\
+\textbf{Trường hợp} & \multicolumn{1}{P{0.67\linewidth}}{\textbf{Response message}} \\
 \midrule\endfirsthead
 \toprule
-\textbf{Sự kiện} & \multicolumn{1}{P{0.68\linewidth}}{\textbf{Event message}} \\
+\textbf{Trường hợp} & \multicolumn{1}{P{0.67\linewidth}}{\textbf{Response message}} \\
 \midrule\endhead
-
-\normalfont Buộc đăng xuất \newline \cmd{FORCE\_LOGOUT} &
-\{"type":"evt","evt":"FORCE\_LOGOUT",\newline "data":\{"reason":"LOCKED"\}\} \\
-\midrule
-
-\normalfont Có người xin vào \newline \cmd{JOIN\_REQUEST} &
-\{"type":"evt","evt":"JOIN\_REQUEST",\newline "data":\{"username":"huy"\}\} \\
-\midrule
-
-\normalfont Kết quả xin vào \newline \cmd{JOIN\_RESULT} &
-\{"type":"evt","evt":"JOIN\_RESULT",\newline "data":\{"team\_id":5,"accepted":true\}\} \\
-\midrule
-
-\normalfont Nhận lời mời \newline \cmd{INVITE} &
-\{"type":"evt","evt":"INVITE",\newline "data":\{"team\_id":5,"team\_name":"Rong Bay","from":"son"\}\} \\
-\midrule
-
-\normalfont Kết quả lời mời \newline \cmd{INVITE\_RESULT} &
-\{"type":"evt","evt":"INVITE\_RESULT",\newline "data":\{"username":"huy","accepted":true\}\} \\
-\midrule
-
-\normalfont Cập nhật đội \newline \cmd{TEAM\_UPDATE} &
-\{"type":"evt","evt":"TEAM\_UPDATE",\newline "data":\{"team\_id":5,"members":[\{"slot":0,"username":"son","is\_captain":true,"online":true\}]\}\} \\
-\midrule
-
-\normalfont Bị xóa khỏi đội \newline \cmd{KICKED} &
-\{"type":"evt","evt":"KICKED",\newline "data":\{"team\_id":5,"by":"son"\}\} \\
-\midrule
-
-\normalfont Đội bị xóa \newline \cmd{TEAM\_DELETED} &
-\{"type":"evt","evt":"TEAM\_DELETED",\newline "data":\{"team\_id":5,"by":"son"\}\} \\
-\midrule
-
-\normalfont Nhận thách đấu \newline \cmd{CHALLENGE} &
-\{"type":"evt","evt":"CHALLENGE",\newline "data":\{"team\_id":5,"team\_name":"Rong Bay"\}\} \\
-\midrule
-
-\normalfont Kết quả thách đấu \newline \cmd{CHALLENGE\_RESULT} &
-\{"type":"evt","evt":"CHALLENGE\_RESULT",\newline "data":\{"team\_id":8,"accepted":true\}\} \\
-\midrule
-
-\normalfont Thách đấu bị hủy \newline \cmd{CHALLENGE\_CANCELLED} &
-\{"type":"evt","evt":"CHALLENGE\_CANCELLED",\newline "data":\{"team\_id":5\}\} \\
-\midrule
-
-\normalfont Cập nhật sảnh \newline \cmd{LOBBY\_UPDATE} &
-\{"type":"evt","evt":"LOBBY\_UPDATE",\newline "data":\{"lobby\_id":3,"host":\{"team\_id":5,"name":"Rong Bay","members":[...]\},"guest":\{"team\_id":8,"name":"Sao Bang","members":[...]\},"settings":\{"turn\_time":30,"chest\_time":30,"start\_coin":0\},"guest\_ready":true\}\} \\
-\midrule
-
-\normalfont Đóng sảnh \newline \cmd{LOBBY\_CLOSED} &
-\{"type":"evt","evt":"LOBBY\_CLOSED",\newline "data":\{"reason":"DISCONNECTED"\}\} \\
-\midrule
-
-\normalfont Bắt đầu trận \newline \cmd{MATCH\_START} &
-\{"type":"evt","evt":"MATCH\_START",\newline "data":\{"match\_id":3,"settings":\{"turn\_time":30,"chest\_time":30,"start\_coin":0\},"state":\{...\}\}\} \\
-\midrule
-
-\normalfont Tiếp tục trận \newline \cmd{MATCH\_RESUME} &
-\{"type":"evt","evt":"MATCH\_RESUME",\newline "data":\{"match\_id":3,"settings":\{"turn\_time":30,"chest\_time":30,"start\_coin":0\},"state":\{...\}\}\} \\
-\midrule
-
-\normalfont Bắt đầu lượt \newline \cmd{TURN\_START} &
-\{"type":"evt","evt":"TURN\_START",\newline "data":\{"player":"son","deadline\_ms":1763430146000,"state":\{...\}\}\} \\
-\midrule
-
-\normalfont Thả rương \newline \cmd{CHEST\_DROP} &
-\{"type":"evt","evt":"CHEST\_DROP",\newline "data":\{"player":"son","tier":"SILVER"\}\} \\
-\midrule
-
-\normalfont Câu hỏi rương \newline \cmd{CHEST\_QUESTION} &
-\{"type":"evt","evt":"CHEST\_QUESTION",\newline "data":\{"tier":"SILVER","question":"2+2=?","choices":["3","4","5","6"],"deadline\_ms":1763430150000,"can\_answer":true\}\} \\
-\midrule
-
-\normalfont Kết quả rương \newline \cmd{CHEST\_RESULT} &
-\{"type":"evt","evt":"CHEST\_RESULT",\newline "data":\{"correct":true,"answer":"B","coin":500,"state":\{...\}\}\} \\
-\midrule
-
-\normalfont Mua vật phẩm \newline \cmd{PURCHASE} &
-\{"type":"evt","evt":"PURCHASE",\newline "data":\{"player":"son","item":"LASER","qty":1,"state":\{...\}\}\} \\
-\midrule
-
-\normalfont Sửa tàu \newline \cmd{REPAIR} &
-\{"type":"evt","evt":"REPAIR",\newline "data":\{"player":"son","hp":150,"state":\{...\}\}\} \\
-\midrule
-
-\normalfont Nạp đạn \newline \cmd{RELOAD} &
-\{"type":"evt","evt":"RELOAD",\newline "data":\{"player":"son","weapon":"LASER","index":0,"state":\{...\}\}\} \\
-\midrule
-
-\normalfont Tấn công \newline \cmd{ATTACK} &
-\{"type":"evt","evt":"ATTACK",\newline "data":\{"attacker":"son","target":"minh","gun":\{"type":"LASER","count":2\},"missiles":1,"damage":1000,"armor\_lost":500,"hp\_lost":500,"destroyed":false,"state":\{...\}\}\} \\
-\midrule
-
-\normalfont Bỏ lượt \newline \cmd{TURN\_SKIPPED} &
-\{"type":"evt","evt":"TURN\_SKIPPED",\newline "data":\{"player":"son","reason":"TIMEOUT","state":\{...\}\}\} \\
-\midrule
-
-\normalfont Mất kết nối \newline \cmd{PLAYER\_DISCONNECTED} &
-\{"type":"evt","evt":"PLAYER\_DISCONNECTED",\newline "data":\{"player":"son","state":\{...\}\}\} \\
-\midrule
-
-\normalfont Kết nối lại \newline \cmd{PLAYER\_RECONNECTED} &
-\{"type":"evt","evt":"PLAYER\_RECONNECTED",\newline "data":\{"player":"son","state":\{...\}\}\} \\
-\midrule
-
-\normalfont Tàu bị hạ \newline \cmd{SHIP\_DESTROYED} &
-\{"type":"evt","evt":"SHIP\_DESTROYED",\newline "data":\{"player":"minh","reason":"ATTACK","state":\{...\}\}\} \\
-\midrule
-
-\normalfont Kết thúc trận \newline \cmd{MATCH\_END} &
-\{"type":"evt","evt":"MATCH\_END",\newline "data":\{"winner\_team\_id":5,"loser\_team\_id":8,"reason":"ELIMINATED","turns":12,"stats":[\{"username":"son","team\_id":5,"survived":true,"damage\_dealt":1800\}],"state":\{...\}\}\} \\
+Dòng nhận được không phải JSON hợp lệ (kết nối giữ nguyên) & \{"type":"res","code":2001,"msg":"Bad format"\} \\
+Không có trường \cmd{cmd} hoặc lệnh không tồn tại & \{"type":"res","code":2002,"msg":"Unknown command"\} \\
+Message dài quá 8192 byte; server đóng kết nối ngay sau khi gửi & \{"type":"res","code":2004,"msg":"Message too long"\} \\
+Hàng đợi của thread pool đầy & \{"type":"res","code":9002,"msg":"Server busy"\} \\
 \bottomrule
-\caption{Event message server gửi cho client}\label{tab:events-detail}
+\caption{Response lỗi chung}
 \end{longtable}
 
-Snapshot trận được làm riêng cho từng người nhận: đội mình thấy đầy đủ; tàu đối phương chỉ hiện HP, giáp, số laze và số tên lửa, \emph{không} có coin và đạn.
+Request và toàn bộ response của từng lệnh:
 
-% =====================================================================
-\section{Responsibility}
-
-Khối lượng công việc được phân chia cân bằng, mỗi thành viên chịu trách nhiệm chính cho 50\% công việc và cùng phối hợp tích hợp, kiểm thử toàn bộ hệ thống.
-
-\begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}P{0.28\linewidth} L@{}}
+\begin{longtable}{@{}P{0.27\linewidth} J{0.67\linewidth}@{}}
 \toprule
-\textbf{Thành viên} & \textbf{Nhiệm vụ chính} \\
-\midrule
-Đặng Hoàng Sơn -- 20235994 & Thiết kế kiến trúc server và giao thức; xây dựng tầng kết nối TCP/epoll, quản lý phiên và xác thực; phát triển chức năng đội, thách đấu và sảnh chờ; viết unit test cho các module phụ trách. \\
-\midrule
-Ngô Đức Huy -- 20235946 & Xây dựng luật chơi và xử lý trận đấu, lượt chơi, rương và trang bị; phát triển client GTK và đồng bộ trạng thái; xây dựng lưu trữ SQLite, giao diện quản trị; viết unit test cho các module phụ trách. \\
-\bottomrule
-\end{tabularx}
-\caption{Phân công trách nhiệm của các thành viên}
-\end{table}
+\textbf{Trường hợp} & \multicolumn{1}{P{0.67\linewidth}}{\textbf{Message}} \\
+\midrule\endfirsthead
+\toprule
+\textbf{Trường hợp} & \multicolumn{1}{P{0.67\linewidth}}{\textbf{Message}} \\
+\midrule\endhead
 
-Hai thành viên cùng thực hiện kiểm thử tích hợp, sửa lỗi, hoàn thiện tài liệu và chuẩn bị bản chạy cuối cùng.
+\multicolumn{2}{@{}l}{\textbf{Ping} -- \cmd{PING}} \\
+\midrule
+Request & \{"cmd":"PING"\} \\
+Luôn thành công, không cần đăng nhập; \cmd{time} là giờ server (unix ms) & \{"type":"res","code":1000,"msg":"OK","data":\{"time":1763430116000\}\} \\
+\midrule
+
+\multicolumn{2}{@{}l}{\textbf{Đăng ký} -- \cmd{REGISTER}} \\
+\midrule
+Request & \{"cmd":"REGISTER","username":"son","password":"Abc123"\} \\
+Tạo tài khoản thành công (không tự đăng nhập) & \{"type":"res","code":1000,"msg":"OK"\} \\
+Thiếu \cmd{username}/\cmd{password} hoặc không phải chuỗi & \{"type":"res","code":2003,"msg":"Bad parameter"\} \\
+Kết nối này đang đăng nhập & \{"type":"res","code":3002,"msg":"Already logged in"\} \\
+Tên đã tồn tại (không phân biệt hoa thường) & \{"type":"res","code":3005,"msg":"Username taken"\} \\
+Tên sai định dạng & \{"type":"res","code":3006,"msg":"Invalid username"\} \\
+Mật khẩu không dài 6--64 ký tự & \{"type":"res","code":3007,"msg":"Invalid password"\} \\
+Server ở chế độ chỉ đọc do lỗi ghi DB & \{"type":"res","code":9001,"msg":"Server is read-only"\} \\
+\midrule
+
+\multicolumn{2}{@{}l}{\textbf{Đăng nhập} -- \cmd{LOGIN}} \\
+\midrule
+Request & \{"cmd":"LOGIN","username":"son","password":"Abc123"\} \\
+Thành công, chưa có đội & \{"type":"res","code":1000,"msg":"OK","data":\{"username":"son","role":"PLAYER","team\_id":null\}\} \\
+Thành công, đang có trận dở; server gửi tiếp event \cmd{MATCH\_RESUME} & \{"type":"res","code":1000,"msg":"OK","data":\{"username":"son","role":"PLAYER","team\_id":5\}\} \\
+Thiếu tham số hoặc sai kiểu & \{"type":"res","code":2003,"msg":"Bad parameter"\} \\
+Kết nối này đã đăng nhập & \{"type":"res","code":3002,"msg":"Already logged in"\} \\
+Tên không tồn tại, tên sai định dạng hoặc sai mật khẩu & \{"type":"res","code":3003,"msg":"Wrong username or password"\} \\
+Mật khẩu đúng nhưng tài khoản bị khóa & \{"type":"res","code":3004,"msg":"Account locked"\} \\
+\midrule
+
+\multicolumn{2}{@{}l}{\textbf{Đăng xuất} -- \cmd{LOGOUT}} \\
+\midrule
+Request & \{"cmd":"LOGOUT"\} \\
+Thành công; kết nối vẫn mở & \{"type":"res","code":1000,"msg":"OK"\} \\
+Chưa đăng nhập & \{"type":"res","code":3001,"msg":"Not logged in"\} \\
+\midrule
+
+\multicolumn{2}{@{}l}{\textbf{Thông tin phiên} -- \cmd{WHOAMI}} \\
+\midrule
+Request & \{"cmd":"WHOAMI"\} \\
+Thành công & \{"type":"res","code":1000,"msg":"OK","data":\{"username":"son","role":"PLAYER","team\_id":5,"is\_captain":true,"state":"IDLE"\}\} \\
+Chưa đăng nhập & \{"type":"res","code":3001,"msg":"Not logged in"\} \\
+\midrule
+
+\multicolumn{2}{@{}l}{\textbf{Đổi mật khẩu} -- \cmd{CHANGE\_PASSWORD}} \\
+\midrule
+Request & \{"cmd":"CHANGE\_PASSWORD","old\_password":"Abc123","new\_password":"Xyz789"\} \\
+Thành công; phiên hiện tại giữ nguyên & \{"type":"res","code":1000,"msg":"OK"\} \\
+Thiếu tham số hoặc sai kiểu & \{"type":"res","code":2003,"msg":"Bad parameter"\} \\
+Chưa đăng nhập & \{"type":"res","code":3001,"msg":"Not logged in"\} \\
+Mật khẩu cũ sai & \{"type":"res","code":3003,"msg":"Wrong password"\} \\
+Mật khẩu mới không dài 6--64 ký tự & \{"type":"res","code":3007,"msg":"Invalid password"\} \\
+Server ở chế độ chỉ đọc & \{"type":"res","code":9001,"msg":"Server is read-only"\} \\
+\bottomrule
+\caption{Request và response của các lệnh quản lý phiên}\label{tab:session-cmds}
+\end{longtable}
+
+Các bước xử lý bên trong server:
+\begin{itemize}
+  \item \textbf{\cmd{LOGIN}}: (1) luồng chính kiểm tra định dạng và kết nối chưa đăng nhập; (2) đẩy job sang pool rồi quay lại phục vụ kết nối khác ngay; (3) pool đọc mật khẩu đã băm từ cơ sở dữ liệu, băm mật khẩu vừa nhận rồi so sánh (khoảng 50--100 ms). \emph{Băm} là biến mật khẩu thành một chuỗi không đảo ngược được; server chỉ lưu chuỗi này, không lưu mật khẩu gốc; (4) pool báo kết quả về cho luồng chính; (5) luồng chính thay phiên cũ nếu có, tạo phiên, trả response, rồi gửi \cmd{MATCH\_RESUME} nếu có trận dở.
+  \item \textbf{\cmd{REGISTER}}: (1) luồng chính kiểm tra tên chưa có trong RAM và \emph{giữ chỗ} tên đó để 2 người không đăng ký trùng cùng lúc; (2) pool tạo salt và hash mật khẩu; (3) DB writer \cmd{INSERT} vào bảng \cmd{users} và trả \cmd{id} về; (4) luồng chính thêm tài khoản vào RAM và trả response.
+  \item \textbf{\cmd{CHANGE\_PASSWORD}}: pool kiểm tra mật khẩu cũ và hash mật khẩu mới; DB writer ghi xuống DB.
+\end{itemize}
+
+\subsection{Duy trì phiên}
+\begin{itemize}
+  \item Client gửi \cmd{PING} mỗi 20 giây. Client dùng \cmd{time} trong response để tính độ lệch đồng hồ với server.
+  \item Mỗi lần nhận được byte bất kỳ, server cập nhật thời điểm nhận gần nhất của kết nối. Kết nối nào 60 giây không gửi gì thì bị đóng và xử lý như mất kết nối. Cơ chế này cần thiết vì khi rút dây mạng hoặc máy client treo, server không hề được báo là kết nối đã chết; client bình thường luôn gửi \cmd{PING} nên không bao giờ bị đóng nhầm.
+  \end{itemize}
+
+\subsection{Khi phiên kết thúc}
+Bảng dưới liệt kê mọi trường hợp phiên kết thúc. Cột ``Client nhận'' ghi \cmd{--} nghĩa là server không gửi gì, vì kết nối đã mất hoặc không còn dùng được.
+
+\begin{longtable}{@{}P{0.34\linewidth} P{0.13\linewidth} J{0.45\linewidth}@{}}
+\toprule
+\textbf{Trường hợp} & \textbf{Kết nối sau đó} & \multicolumn{1}{P{0.45\linewidth}}{\textbf{Client nhận}} \\
+\midrule\endfirsthead
+\toprule
+\textbf{Trường hợp} & \textbf{Kết nối sau đó} & \multicolumn{1}{P{0.45\linewidth}}{\textbf{Client nhận}} \\
+\midrule\endhead
+Người dùng bấm đăng xuất (\cmd{LOGOUT}) & \textbf{Vẫn mở} & \{"type":"res","code":1000,"msg":"OK"\} \\
+\midrule
+Người dùng đóng app hoặc tắt client & Đóng & -- \\
+\midrule
+Mạng bị ngắt đột ngột, ví dụ wifi rớt & Đóng & -- \\
+\midrule
+Rút dây mạng hoặc máy client treo: server không nhận được gì trong 60 giây & Đóng & -- \\
+\midrule
+Client gửi message dài quá 8192 byte & Đóng & \{"type":"res","code":2004,"msg":"Message too long"\} \\
+\midrule
+Client nhận dữ liệu quá chậm, dữ liệu chờ gửi tới client vượt 256 KB & Đóng & -- \\
+\midrule
+Cùng tài khoản đăng nhập thành công ở client khác & Đóng & \{"type":"evt","evt":"FORCE\_LOGOUT","data":\{"reason":"REPLACED"\}\} \\
+\midrule
+Admin khóa tài khoản (\cmd{ADMIN\_LOCK}) & Đóng & \{"type":"evt","evt":"FORCE\_LOGOUT","data":\{"reason":"LOCKED"\}\} \\
+\midrule
+Server bị tắt & Đóng & \{"type":"evt","evt":"FORCE\_LOGOUT","data":\{"reason":"SHUTDOWN"\}\} \\
+\bottomrule
+\caption{Các trường hợp phiên kết thúc}\label{tab:session-end}
+\end{longtable}
+
+Phía client:
+\begin{itemize}
+  \item Sau \cmd{LOGOUT} hoặc \cmd{FORCE\_LOGOUT}: quay về màn đăng nhập và \textbf{không} tự kết nối lại.
+  \item Mất kết nối vì các lý do còn lại: tự kết nối lại sau 1, 2, 4, 8, 16, 30 giây, sau đó cứ 30 giây một lần; kết nối được thì tự gửi lại \cmd{LOGIN}. Mật khẩu chỉ giữ trong RAM để làm việc này, không ghi ra đĩa.
+\end{itemize}
+
+Phía server, sau khi hủy phiên thì dọn dẹp theo vị trí của người chơi (bảng~\ref{tab:session-cleanup}). \textbf{Ngoại lệ là \cmd{REPLACED}}: phiên không bị hủy mà chỉ chuyển sang kết nối mới, nên người chơi vẫn ở trong đội, trong sảnh hoặc trong trận như cũ, và những người khác \emph{không} nhận \cmd{PLAYER\_DISCONNECTED}. Server chọn thay phiên cũ thay vì từ chối đăng nhập mới vì có thể mất tới 60 giây mới phát hiện kết nối cũ đã chết; từ chối thì người chơi bị kẹt ngoài trận suốt khoảng đó, trong khi muốn chiếm phiên vẫn phải có đúng mật khẩu.
+
+Dọn dẹp theo vị trí người chơi và event gửi cho những người liên quan:
+
+\begin{longtable}{@{}P{0.36\linewidth} J{0.58\linewidth}@{}}
+\toprule
+\textbf{Người chơi đang ở đâu, server xử lý} & \multicolumn{1}{P{0.58\linewidth}}{\textbf{Event gửi đi}} \\
+\midrule\endfirsthead
+\toprule
+\textbf{Người chơi đang ở đâu, server xử lý} & \multicolumn{1}{P{0.58\linewidth}}{\textbf{Event gửi đi}} \\
+\midrule\endhead
+\textbf{Không có đội.} Hủy mọi lời xin vào và lời mời của người đó & -- \\
+\midrule
+\textbf{Có đội, đội đang rảnh.} Như trên, cộng thêm tự rời đội; nếu là đội trưởng thì quyền chuyển cho slot nhỏ nhất, đội trống thì bị xóa. Đồng đội nhận & \{"type":"evt","evt":"TEAM\_UPDATE","data":\{"team\_id":5,"members":[\{"slot":1,"username":"huy","is\_captain":true,"online":true\}]\}\} \\
+\midrule
+\textbf{Sảnh chờ.} Rời đội, đóng sảnh, 2 đội về \cmd{IDLE}. Mọi người trong sảnh nhận \cmd{LOBBY\_CLOSED}; đồng đội nhận thêm \cmd{TEAM\_UPDATE} như trên & \{"type":"evt","evt":"LOBBY\_CLOSED","data":\{"reason":"DISCONNECTED"\}\} \\
+\midrule
+\textbf{Trong trận.} Giữ tàu với \cmd{online=false}. Những người còn lại nhận \cmd{PLAYER\_DISCONNECTED} & \{"type":"evt","evt":"PLAYER\_DISCONNECTED","data":\{"player":"son","state":\{...\}\}\} \\
+Tới lượt người đó thì bỏ qua ngay; đang mở rương thì mất rương & \{"type":"evt","evt":"TURN\_SKIPPED","data":\{"player":"son","reason":"DISCONNECTED","state":\{...\}\}\} \\
+\midrule
+\textbf{Cả đội offline liên tục 120 giây.} Đội đó thua do bỏ cuộc & \{"type":"evt","evt":"MATCH\_END","data":\{"winner\_team\_id":5,"loser\_team\_id":8,"reason":"FORFEIT","turns":12,"stats":[...],"state":\{...\}\}\} \\
+\midrule
+\textbf{Bị \cmd{ADMIN\_LOCK} khi đang trong trận.} Tàu bị hạ ngay (HP = 0), sau đó kiểm tra kết thúc trận & \{"type":"evt","evt":"SHIP\_DESTROYED","data":\{"player":"son","reason":"LOCKED","state":\{...\}\}\} \\
+\bottomrule
+\caption{Xử lý khi phiên kết thúc theo vị trí người chơi}\label{tab:session-cleanup}
+\end{longtable}
+
+Hết trận mà người chơi vẫn offline thì tự rời đội.
 
 \end{document}
