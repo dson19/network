@@ -4,9 +4,9 @@ Mô tả luồng: [DESIGN.md](../DESIGN.md)
 
 ```mermaid
 flowchart LR
-    subgraph Client["Client - GTK3, 1 luồng"]
-        UI["Giao diện GTK"]
-        CNET["Net module<br/>g_io_add_watch"]
+    subgraph Client["Client - C++ Qt Quick, 1 luồng"]
+        UI["Giao diện QML"]
+        CNET["Net module<br/>net.c + QSocketNotifier"]
         CSTATE["Client state<br/>snapshot mới nhất"]
         UI -->|"lệnh người dùng"| CNET
         CNET -->|"response, event"| CSTATE
@@ -24,9 +24,10 @@ flowchart LR
             MATCH["Match engine"]
             TIMER["Timer<br/>đồng hồ lượt, rương, idle"]
         end
-        subgraph Pool["Thread pool"]
-            W["Worker 1..N"]
+        subgraph Pool["Thread pool - 2 luồng"]
+            W["Worker<br/>PBKDF2, đọc DB, đọc log"]
         end
+        WR["DB writer - 1 luồng<br/>ghi DB, ghi log"]
         DB[("SQLite")]
         LOG[["File log"]]
     end
@@ -37,6 +38,10 @@ flowchart LR
     TIMER -->|"timeout của epoll_wait"| LOOP
     DISP -->|"hàng đợi việc"| W
     W -->|"eventfd + hàng đợi kết quả"| LOOP
-    W --> DB
-    W --> LOG
+    W -->|"đọc"| DB
+    W -->|"đọc"| LOG
+    DISP -->|"hàng đợi ghi"| WR
+    WR -->|"kết quả"| LOOP
+    WR -->|"ghi"| DB
+    WR -->|"ghi"| LOG
 ```

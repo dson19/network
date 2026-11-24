@@ -9,9 +9,9 @@ sequenceDiagram
     participant S as Server
 
     Note over S: Cả 3 người đội B mất kết nối lúc t
-    S->>A: PLAYER_DISCONNECTED (x3)
+    S->>A: MATCH_UPDATE {action:DISCONNECTED} (x3)
     loop mỗi lượt của đội B
-        S->>A: TURN_SKIPPED {reason:DISCONNECTED}
+        S->>A: MATCH_UPDATE {action:TURN_SKIPPED, reason:DISCONNECTED}
     end
     S->>S: đến t + 120s mà đội B vẫn không có ai online
     S->>A: MATCH_END {winner_team_id:A, reason:FORFEIT}

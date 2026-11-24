@@ -52,7 +52,7 @@ Sơ đồ: [sequence/01-login.md](diagrams/sequence/01-login.md)
 5. Luồng chính xử lý tiếp:
    - Nếu tài khoản đang có phiên ở kết nối khác thì thay thế phiên đó (xem 5.2).
    - Tạo phiên mới, đánh dấu tài khoản online.
-6. Server trả response `1000` với `data` gồm `username`, `role`, `team_id`.
+6. Server trả response `1000` với `data` gồm `user_id`, `username`, `role`, `team_id`.
 7. Nếu tài khoản đang có trận dở thì server gửi thêm event `MATCH_RESUME` ngay sau response (xem 5.1). Client dựa vào event này để vào thẳng màn trận, không cần trường `state` trong response.
 8. Server đẩy dòng log vào hàng đợi của DB writer.
 
@@ -75,7 +75,7 @@ Sơ đồ: [sequence/02-join-team.md](diagrams/sequence/02-join-team.md)
 5. Server cập nhật đội trong RAM và trả `1000` cho đội trưởng. Đội là party chỉ nằm trong RAM nên không ghi DB.
 6. Server gửi `JOIN_RESULT` cho X, rồi gửi `TEAM_UPDATE` cho cả đội (kể cả X).
 
-Luồng **mời vào đội** (`TEAM_INVITE` rồi `TEAM_INVITE_REPLY`) đi theo các bước tương tự nhưng đổi vai: đội trưởng gửi lời mời, người được mời chấp nhận.
+Luồng **mời vào đội** đi theo các bước tương tự nhưng đổi vai: đội trưởng gọi `PLAYER_LIST` để lấy danh sách người đang online và chưa có đội, chọn một người rồi gửi `TEAM_INVITE` với `user_id`; người được mời nhận event `INVITE` và trả lời bằng `TEAM_INVITE_REPLY`.
 
 ### 2.3. Thách đấu, sảnh chờ, bắt đầu trận
 
@@ -110,7 +110,7 @@ Sơ đồ: [sequence/04-full-turn.md](diagrams/sequence/04-full-turn.md)
 2. **Bắt đầu lượt:** server gửi `TURN_START` kèm `deadline_ms`, rồi đặt đồng hồ lượt vào Timer.
 3. **Thả rương:** server quay ngẫu nhiên loại rương (đồng 60%, bạc 30%, vàng 10%) và gửi `CHEST_DROP` cho mọi người trong trận.
 4. **Hành động tự do:** người chơi làm theo thứ tự bất kỳ, bao nhiêu lần cũng được:
-   - `BUY`, `REPAIR`: server trả response, rồi gửi event `PURCHASE` / `REPAIR` cho cả trận. Đội mình nhận snapshot đầy đủ, đối phương nhận snapshot đã giấu coin và đạn.
+   - `BUY`, `REPAIR`: server trả response, rồi gửi `MATCH_UPDATE` (`action` là `PURCHASE` / `REPAIR`) cho cả trận. Đội mình nhận snapshot đầy đủ, đối phương nhận snapshot đã giấu coin và đạn.
    - `RELOAD`: tương tự. Lệnh này làm được cả ngoài lượt.
 5. **Mở rương** (không bắt buộc):
    1. Người chơi gửi `CHEST_OPEN`.
@@ -124,9 +124,9 @@ Sơ đồ: [sequence/04-full-turn.md](diagrams/sequence/04-full-turn.md)
    7. Server **chạy lại đồng hồ lượt** với thời gian còn lại.
 6. **Tấn công:**
    1. Người chơi gửi `ATTACK`.
-   2. Server kiểm tra: mục tiêu là đối phương còn sống, không trộn 2 loại pháo, số khẩu và số tên lửa không vượt quá số đang có.
+   2. Server kiểm tra: mục tiêu là đối phương còn sống, không trộn 2 loại pháo, các chỗ được chọn đã lắp pháo và còn đạn, số tên lửa không vượt quá số đang có.
    3. Server tính tổng Dam, trừ Amor từ lớp giáp ngoài cùng vào trong, phần dư trừ vào HP.
-   4. Server trả `1000`, rồi gửi event `ATTACK` cho cả trận.
+   4. Server trả `1000`, rồi gửi `MATCH_UPDATE` (`action: ATTACK`) cho cả trận.
    5. Lượt kết thúc. Nếu có tàu bị hạ thì kiểm tra kết thúc trận (xem 2.5), nếu không thì quay lại bước 1.
 7. Rương chưa mở mà lượt đã kết thúc thì rương biến mất.
 
@@ -140,7 +140,7 @@ Sơ đồ: [sequence/05-match-end.md](diagrams/sequence/05-match-end.md)
 | **Điều kiện** | Một đội không còn tàu nào sống, hoặc toàn đội offline quá 120 giây |
 | **Kết quả** | Trận bị hủy. Cả 2 đội quay về room (`IDLE`) và được mở khóa thao tác |
 
-1. Server gửi `SHIP_DESTROYED` cho tàu vừa bị hạ.
+1. Server gửi `MATCH_UPDATE` (`action: SHIP_DESTROYED`) cho tàu vừa bị hạ.
 2. Server gửi `MATCH_END` với `reason` là `ELIMINATED` (bị hạ hết tàu) hoặc `FORFEIT` (bỏ cuộc).
 3. Server hủy trận và mọi đồng hồ của trận đó, rồi chuyển 2 đội về room (`IDLE`). Thành viên vẫn còn offline bị tự rời đội, đồng đội nhận `TEAM_UPDATE`.
 4. Server đẩy dòng log kết quả trận vào hàng đợi của DB writer. Kết quả trận không lưu vào DB.
@@ -188,7 +188,8 @@ Sơ đồ: [sequence/12-error-game-rules.md](diagrams/sequence/12-error-game-rul
 | Trộn pháo tự động và laze trong một lần bắn | `7007` |
 | Bắn đồng đội, tàu đã chết, hoặc người không có trong trận | `7006` |
 | Không đủ coin | `7004` |
-| Hết slot pháo hoặc tên lửa | `7005` |
+| Hết chỗ lắp pháo hoặc đã đủ tên lửa | `7005` |
+| Reload hoặc bắn bằng chỗ chưa lắp pháo | `7014` |
 | Làm việc khác khi đang mở rương | `7012` |
 
 ### 3.4. Lỗi phân quyền
@@ -199,6 +200,8 @@ Sơ đồ: [sequence/13-error-permission.md](diagrams/sequence/13-error-permissi
 |---|---|
 | Thành viên thường dùng lệnh của đội trưởng | `4002` |
 | Người không phải admin dùng lệnh admin | `4003` |
+| Đội trưởng xóa đội khác | `4001` |
+| Admin khóa chính mình hoặc admin khác | `4001` |
 | Bất kỳ ai (**kể cả admin**) xóa đội hoặc kick người khi đội đang ở sảnh chờ hoặc trong trận | `5006` |
 
 ---
@@ -212,7 +215,7 @@ Mọi đồng hồ đều nằm trong Timer của luồng chính. Timer lấy m�
 Sơ đồ: [sequence/20-timeout-turn.md](diagrams/sequence/20-timeout-turn.md)
 
 1. `epoll_wait` trả về vì hết timeout. Timer báo lượt hiện tại đã hết hạn.
-2. Server gửi `TURN_SKIPPED` với `reason: TIMEOUT` cho cả trận. Rương chưa mở thì biến mất.
+2. Server gửi `MATCH_UPDATE` (`action: TURN_SKIPPED`, `reason: TIMEOUT`) cho cả trận. Rương chưa mở thì biến mất.
 3. Server sang lượt tiếp theo (xem 2.4).
 4. Request đến server **sau** mốc hết hạn thì bị coi là ngoài lượt (`7002`), kể cả khi người dùng đã bấm nút trước mốc đó. Server chỉ căn theo đồng hồ của chính nó.
 
@@ -240,7 +243,7 @@ Luồng này phát hiện được các trường hợp mạng chết mà không
 Sơ đồ: [sequence/23-timeout-forfeit.md](diagrams/sequence/23-timeout-forfeit.md)
 
 1. Người cuối cùng còn online của một đội mất kết nối. Server đặt đồng hồ bỏ cuộc 120 giây cho đội đó.
-2. Trong thời gian này, tới lượt của thành viên đội đó thì server bỏ qua ngay (`TURN_SKIPPED` với `reason: DISCONNECTED`).
+2. Trong thời gian này, tới lượt của thành viên đội đó thì server bỏ qua ngay (`MATCH_UPDATE` với `action: TURN_SKIPPED`, `reason: DISCONNECTED`).
 3. Nếu có thành viên đăng nhập lại thì server hủy đồng hồ bỏ cuộc.
 4. Hết 120 giây mà vẫn không có ai online thì đội đó thua: server gửi `MATCH_END` với `reason: FORFEIT` (xem 2.5).
 
@@ -254,7 +257,7 @@ Sơ đồ: [sequence/30-reconnect-in-match.md](diagrams/sequence/30-reconnect-in
 
 **Khi mất kết nối:**
 1. Server hủy phiên. Tàu vẫn ở trong trận, đánh dấu `online: false`.
-2. Server gửi `PLAYER_DISCONNECTED` cho những người còn lại trong trận.
+2. Server gửi `MATCH_UPDATE` (`action: DISCONNECTED`) cho những người còn lại trong trận.
 3. Tới lượt người đó thì server bỏ qua ngay, không chờ hết giờ lượt.
 
 **Phía client:**
@@ -263,7 +266,7 @@ Sơ đồ: [sequence/30-reconnect-in-match.md](diagrams/sequence/30-reconnect-in
 
 **Khi vào lại:**
 6. Server trả `1000`, rồi gửi `MATCH_RESUME` kèm snapshot.
-7. Server gửi `PLAYER_RECONNECTED` cho những người còn lại.
+7. Server gửi `MATCH_UPDATE` (`action: RECONNECTED`) cho những người còn lại.
 8. Client vẽ lại màn hình trận từ snapshot.
 
 Người dùng tự bấm đăng xuất, hoặc bị `FORCE_LOGOUT`, thì client **không** tự kết nối lại.
@@ -280,7 +283,7 @@ Sơ đồ: [sequence/31-session-replace.md](diagrams/sequence/31-session-replace
 1. Server gửi `FORCE_LOGOUT` với `reason: REPLACED` cho kết nối cũ. Event này có thể không tới được nơi nếu kết nối cũ đã chết.
 2. Server đóng kết nối cũ và chuyển phiên sang kết nối mới.
 3. Server trả `1000` cho kết nối mới. Nếu tài khoản đang trong trận thì gửi thêm `MATCH_RESUME`.
-4. Những người khác **không** nhận `PLAYER_DISCONNECTED`, vì phiên không bị gián đoạn.
+4. Những người khác **không** nhận `MATCH_UPDATE` (`DISCONNECTED`), vì phiên không bị gián đoạn.
 
 **Vì sao thay thế phiên cũ thay vì từ chối đăng nhập mới:** khi mạng rớt, server có thể chưa phát hiện được ngay, mất tới 60 giây. Nếu từ chối thì người chơi bị kẹt ngoài trận suốt khoảng thời gian đó. Muốn chiếm phiên thì vẫn phải có đúng mật khẩu, nên cách này không làm giảm an toàn.
 
@@ -291,7 +294,7 @@ Sơ đồ: [sequence/32-disconnect-other.md](diagrams/sequence/32-disconnect-oth
 | Đang ở đâu | Server xử lý |
 |---|---|
 | Bất kỳ thành viên nào, đang ở sảnh chờ | Người đó rời đội. Đóng sảnh chờ, gửi `LOBBY_CLOSED` (`reason: DISCONNECTED`), 2 đội về `IDLE` |
-| Đang tới lượt và đang mở rương | Mất rương: gửi `CHEST_RESULT` (`correct: false`) cho đội đó, rồi `TURN_SKIPPED` (`reason: DISCONNECTED`) |
+| Đang tới lượt và đang mở rương | Mất rương: gửi `CHEST_RESULT` (`correct: false`) cho đội đó, rồi `MATCH_UPDATE` (`action: TURN_SKIPPED`, `reason: DISCONNECTED`) |
 | Không ở sảnh chờ, không trong trận | Hủy phiên và tự rời đội (chuyển đội trưởng nếu cần, đội trống thì bị xóa). Hủy lời mời và lời xin vào của người đó. Đồng đội nhận `TEAM_UPDATE` |
 
 ---

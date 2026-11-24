@@ -186,15 +186,18 @@ def main():
           code(c.req({"cmd": "LOGIN", "username": "a b", "password": "Abc123"})) == 3003)
     check("LOGIN missing params -> 2003", code(c.req({"cmd": "LOGIN"})) == 2003)
     res = c.req({"cmd": "LOGIN", "username": "SON", "password": "Abc123"})
-    check("LOGIN ok (case-insensitive name)", code(res) == 1000 and res["data"] ==
+    check("LOGIN ok (case-insensitive name)", code(res) == 1000
+          and isinstance(res["data"].get("user_id"), int) and res["data"]["user_id"] > 0
+          and {k: v for k, v in res["data"].items() if k != "user_id"} ==
           {"username": "son", "role": "PLAYER", "team_id": None}, res)
+    son_id = res["data"].get("user_id")
     check("LOGIN again on same connection -> 3002",
           code(c.req({"cmd": "LOGIN", "username": "son", "password": "Abc123"})) == 3002)
     check("REGISTER while logged in -> 3002",
           code(c.req({"cmd": "REGISTER", "username": "other", "password": "Abc123"})) == 3002)
     res = c.req({"cmd": "WHOAMI"})
     check("WHOAMI", code(res) == 1000 and res["data"]["username"] == "son"
-          and res["data"]["state"] == "IDLE", res)
+          and res["data"]["user_id"] == son_id and res["data"]["state"] == "IDLE", res)
 
     # LOGIN và WHOAMI gửi dính liền: response phải đúng thứ tự dù LOGIN chạy trên pool
     d = Client(port)

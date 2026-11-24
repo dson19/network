@@ -39,7 +39,7 @@ Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
 - Đội chỉ gồm người **đang online**:
   - Thành viên đăng xuất hoặc mất kết nối khi đội **không ở trong trận** thì tự rời đội.
   - Mất kết nối **trong trận** thì vẫn ở trong đội tới hết trận để còn vào lại được. Hết trận mà vẫn offline thì tự rời đội.
-  - Chỉ mời được người đang online. Người chơi offline thì mọi lời xin vào và lời mời của họ bị hủy.
+  - Chỉ mời được người đang online và chưa có đội; đội trưởng chọn từ danh sách những người này. Người chơi offline thì mọi lời xin vào và lời mời của họ bị hủy.
 - Hết trận, đội **quay về room** với các thành viên còn online, giữ nguyên đội trưởng, và thách đấu tiếp được ngay.
 - Mỗi đội tối đa 3 người, có 3 slot cố định là 0, 1, 2. Mỗi người chỉ ở 1 đội.
 - Có người rời đội thì các slot **không dồn xuống**. Người mới vào đội nhận slot trống có số nhỏ nhất.
@@ -69,10 +69,11 @@ Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
 | Loại | Giá | Dam | Ghi chú |
 |---|---|---|---|
 | Pháo tự động | Có sẵn | 10/viên | Chỉ có 1 khẩu, không bỏ được, không mua thêm được. Thùng đạn 100 coin/50 viên |
-| Pháo laze | 1000 coin/khẩu | 100/phát | Tối đa 3 khẩu (pháo tự động chiếm 1 trong 4 slot pháo). Bộ nguồn 100 coin/10 phát |
-| Tên lửa | 2000 coin/quả | 800 | Dùng 1 lần. Không chiếm slot pháo, mang tối đa 4 quả |
+| Pháo laze | 1000 coin/khẩu | 100/phát | Tối đa 3 khẩu (pháo tự động chiếm 1 trong 4 chỗ lắp pháo). Bộ nguồn 100 coin/10 phát |
+| Tên lửa | 2000 coin/quả | 800 | Dùng 1 lần. Không chiếm chỗ lắp pháo, mang tối đa 4 quả |
 
 - Mua đạn không giới hạn số lượng, chỉ cần đủ coin.
+- 4 chỗ lắp pháo được đánh số 0–3: chỗ 0 là pháo tự động, chỗ 1–3 là laze lắp theo thứ tự mua. Reload và tấn công chọn pháo theo số chỗ này.
 - Mỗi khẩu có băng đạn riêng. Kho thùng đạn hoặc bộ nguồn dùng chung cho cùng một loại vũ khí.
 - Hiển thị: `37 viên / 3 thùng`; `Laze 1: 7 phát / 2 bộ`; `Tên lửa: 2/4`.
 - Reload:
@@ -83,7 +84,7 @@ Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
 - Tấn công: chọn 1 tàu mục tiêu, sau đó chọn phần pháo, phần tên lửa, hoặc cả hai. Phải chọn ít nhất 1 trong 2 phần.
   - Phần pháo: chỉ dùng **1 loại pháo**, hoặc pháo tự động hoặc pháo laze, không trộn 2 loại.
     - Pháo tự động: chỉ có 1 khẩu nên bắn 1 viên.
-    - Pháo laze: chọn số khẩu bắn, từ 1 đến số khẩu còn đạn. Mỗi khẩu bắn 1 phát và băng của khẩu đó mất 1 phát.
+    - Pháo laze: chọn các khẩu bắn (1 đến 3 khẩu, khẩu nào cũng phải còn đạn). Mỗi khẩu bắn 1 phát và băng của khẩu đó mất 1 phát.
   - Phần tên lửa: chọn số quả bắn, từ 1 đến số quả đang mang.
   - Ví dụ hợp lệ: 2 laze + 1 tên lửa; 1 tự động + 2 tên lửa; chỉ 3 tên lửa.
   - Ví dụ không hợp lệ: 1 laze + 1 tự động; 1 laze + 1 tự động + 1 tên lửa.

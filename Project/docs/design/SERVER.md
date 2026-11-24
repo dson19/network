@@ -107,6 +107,8 @@ typedef struct Team {
 /* ---------- Trận ---------- */
 typedef enum { ARMOR_BASIC, ARMOR_ADVANCED } ArmorType;
 typedef struct { ArmorType type; int amor; } ArmorLayer;
+typedef enum { GUN_NONE, GUN_AUTO, GUN_LASER } GunType;
+typedef struct { GunType type; int mag; } Gun;
 
 typedef struct Ship {
     User      *user;
@@ -115,9 +117,9 @@ typedef struct Ship {
     int        hp;                  /* 0..1000 */
     int        coin;
     ArmorLayer armor[2];  int armor_count;   /* armor[armor_count-1] là lớp ngoài */
-    int        auto_mag, auto_boxes;         /* pháo tự động: băng, kho thùng */
-    int        laser_mag[3]; int laser_count; /* băng từng khẩu laze */
-    int        power_packs;                  /* kho bộ nguồn chung */
+    Gun        guns[4];                      /* chỗ lắp pháo: [0] luôn AUTO, [1..3] laze theo thứ tự mua */
+    int        ammo_boxes;                   /* kho thùng đạn của pháo tự động */
+    int        power_packs;                  /* kho bộ nguồn chung của laze */
     int        missiles;                     /* 0..4 */
     int        damage_dealt;                 /* thống kê, gửi trong MATCH_END */
 } Ship;
@@ -244,10 +246,10 @@ Giữ cùng kiểu log với các bài tập (HW4): mỗi bản ghi là **1 dòn
 [17/11/2026 10:22:35]$192.168.1.7:40112$-${"cmd":"LOGIN","username":"son","password":"***"}$3003 Wrong username or password
 [17/11/2026 10:23:02]$192.168.1.5:51234$son${"cmd":"TEAM_CREATE","name":"Rong Bay"}$1000 OK
 [17/11/2026 10:25:40]$192.168.1.5:51234$son${"cmd":"LOBBY_START"}$1000 OK
-[17/11/2026 10:26:10]$192.168.1.5:51234$son${"cmd":"ATTACK","target":"minh","gun":{"type":"LASER","count":2},"missiles":1}$1000 OK
+[17/11/2026 10:26:10]$192.168.1.5:51234$son${"cmd":"ATTACK","target":4,"indexes":[1,2],"missiles":1}$1000 OK
 [17/11/2026 10:26:41]$SERVER$TURN_SKIPPED match=3 player=lan reason=TIMEOUT
 [17/11/2026 10:40:12]$SERVER$MATCH_END match=3 winner=5 loser=8 reason=ELIMINATED turns=41
-[17/11/2026 10:41:00]$192.168.1.9:52001$admin${"cmd":"ADMIN_LOCK","username":"hacker","locked":true}$1000 OK
+[17/11/2026 10:41:00]$192.168.1.9:52001$admin${"cmd":"ADMIN_LOCK","user_id":7,"locked":true}$1000 OK
 [17/11/2026 10:41:30]$192.168.1.5:51234$DISCONNECT idle
 ```
 

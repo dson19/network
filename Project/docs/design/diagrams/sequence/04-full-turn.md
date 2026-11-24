@@ -19,9 +19,9 @@ sequenceDiagram
 
     A->>S: {cmd:BUY, item:LASER, qty:1}
     S-->>A: res 1000
-    S->>A: PURCHASE {state đầy đủ}
-    S->>T: PURCHASE {state đầy đủ}
-    S->>B: PURCHASE {state đã giấu coin và đạn}
+    S->>A: MATCH_UPDATE {action:PURCHASE, state đầy đủ}
+    S->>T: MATCH_UPDATE {action:PURCHASE, state đầy đủ}
+    S->>B: MATCH_UPDATE {action:PURCHASE, state đã giấu coin và đạn}
 
     A->>S: {cmd:CHEST_OPEN}
     S->>S: dừng đồng hồ lượt, chạy đồng hồ rương
@@ -36,16 +36,16 @@ sequenceDiagram
     S->>T: CHEST_RESULT {correct:true, coin:500, state}
     S->>B: CHEST_RESULT {correct:true, coin:500}
 
-    A->>S: {cmd:RELOAD, weapon:LASER, index:0}
+    A->>S: {cmd:RELOAD, index:1}
     S-->>A: res 1000
-    S->>A: RELOAD {state}
+    S->>A: MATCH_UPDATE {action:RELOAD, state}
 
-    A->>S: {cmd:ATTACK, target:B0, gun:{LASER, 1}, missiles:1}
+    A->>S: {cmd:ATTACK, target:B0, indexes:[1], missiles:1}
     S->>S: 100 + 800 = 900 Dam, trừ giáp lớp ngoài trước, dư trừ HP
     S-->>A: res 1000
-    S->>A: ATTACK {damage:900, armor_lost, hp_lost, destroyed:false, state}
-    S->>T: ATTACK {...}
-    S->>B: ATTACK {...}
+    S->>A: MATCH_UPDATE {action:ATTACK, damage:900, armor_lost, hp_lost, destroyed:false, state}
+    S->>T: MATCH_UPDATE {action:ATTACK, ...}
+    S->>B: MATCH_UPDATE {action:ATTACK, ...}
     S->>A: TURN_START {player:B0}
     S->>T: TURN_START {player:B0}
     S->>B: TURN_START {player:B0}

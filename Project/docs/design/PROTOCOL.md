@@ -117,7 +117,7 @@ Sơ đồ: [architecture.md](diagrams/architecture.md)
 | *(tham số)* | tùy lệnh | Tùy lệnh | Nằm cùng cấp với `cmd`. Xem mục 4 |
 
 ```json
-{"cmd": "ATTACK", "target": "minh", "gun": {"type": "LASER", "count": 2}, "missiles": 1}
+{"cmd": "ATTACK", "target": 4, "indexes": [1, 2], "missiles": 1}
 ```
 
 Mỗi kết nối chỉ có **một request đang chờ response**. Client chỉ gửi request tiếp theo sau khi đã nhận response của request trước; các thao tác mới được khóa hoặc xếp vào hàng đợi cục bộ.
@@ -146,7 +146,7 @@ Response luôn thuộc về request duy nhất đang chờ trên kết nối đ�
 | `data` | object | Có | Nội dung event. Các event trong trận có thêm trường `state` chứa snapshot |
 
 ```json
-{"type": "evt", "evt": "TURN_SKIPPED", "data": {"player": "lan", "reason": "TIMEOUT", "state": {}}}
+{"type": "evt", "evt": "MATCH_UPDATE", "data": {"action": "TURN_SKIPPED", "player": {"user_id": 2, "username": "lan"}, "reason": "TIMEOUT", "state": {}}}
 ```
 
 ### 2.5. Các object dùng chung
@@ -159,12 +159,16 @@ Response luôn thuộc về request duy nhất đang chờ trên kết nối đ�
 | `chest_time` | số nguyên (giây) | 10–120 | 30 |
 | `start_coin` | số nguyên | 0–100000 | 0 |
 
+**`user`** (một người chơi): `{"user_id", "username"}`. Mọi response và event nhắc tới một người chơi đều gửi cả hai trường: `user_id` để định danh (gửi lại trong request), `username` để hiển thị. Các trường `player`, `attacker`, `target`, `from`, `by`, `captain` và phần tử của `requests` đều là `user`.
+
+Request nhắm tới một người khác (`TEAM_INVITE`, `TEAM_JOIN_REPLY`, `TEAM_KICK`, `TEAM_TRANSFER`, `ADMIN_LOCK`, `ATTACK`) gửi `user_id`, lấy từ một danh sách client đã nhận (`PLAYER_LIST`, `TEAM_JOIN_LIST`, `TEAM_MEMBERS`, `ADMIN_USER_LIST`, `state`). Chỉ `REGISTER` và `LOGIN` gửi `username`, vì người dùng tự gõ tên của chính mình.
+
 **`member`** (thành viên đội):
 
 | Trường | Kiểu | Mô tả |
 |---|---|---|
 | `slot` | 0, 1, 2 | Slot cố định, không dồn khi có người rời |
-| `username` | chuỗi | |
+| `user_id`, `username` | số, chuỗi | |
 | `is_captain` | bool | |
 | `online` | bool | |
 
@@ -172,18 +176,23 @@ Response luôn thuộc về request duy nhất đang chờ trên kết nối đ�
 
 | Trường | Kiểu | Ai thấy | Mô tả |
 |---|---|---|---|
-| `username`, `slot` | chuỗi, số | Mọi người | |
+| `user_id`, `username`, `slot` | số, chuỗi, số | Mọi người | |
 | `online`, `alive` | bool | Mọi người | |
 | `hp` | 0–1000 | Mọi người | |
 | `armor` | mảng `{type, amor}` | Mọi người | Thứ tự từ trong ra ngoài. Phần tử cuối bị trừ trước |
 | `coin` | số nguyên | Đội mình | |
-| `auto` | `{mag, boxes}` | Đội mình | Băng đạn và kho thùng của pháo tự động |
-| `lasers` | mảng `{mag}` | Đội mình | Băng của từng khẩu laze |
-| `power_packs` | số nguyên | Đội mình | Kho bộ nguồn dùng chung |
-| `laser_count` | số nguyên | Đối phương | Chỉ có số khẩu, không có đạn |
+| `guns` | mảng 4 phần tử `{type, mag}` hoặc `null` | Mọi người (`mag` chỉ đội mình thấy) | 4 chỗ lắp pháo, xem bên dưới |
+| `ammo_boxes` | số nguyên | Đội mình | Kho thùng đạn của pháo tự động |
+| `power_packs` | số nguyên | Đội mình | Kho bộ nguồn dùng chung của laze |
 | `missiles` | 0–4 | Mọi người | |
 
-**`state`** (snapshot trận): gồm `match_id`, `turn` (`player`, `deadline_ms`, `paused`), `chest` (`tier`, `opened`, hoặc `null`) và `teams` (mỗi đội có `team_id`, `name` và mảng `ships`). Ví dụ đầy đủ ở mục 7.
+**`guns`** (chỗ lắp pháo): tàu có 4 chỗ lắp pháo, đánh số 0–3. Số này là vị trí trong mảng `guns` và là giá trị dùng trong `RELOAD.index`, `ATTACK.indexes`.
+- Chỗ 0 luôn là pháo tự động (`"type": "AUTO"`).
+- Chỗ 1–3 là pháo laze (`"type": "LASER"`), lắp theo thứ tự mua: khẩu mua đầu tiên ở chỗ 1. Chỗ chưa lắp là `null`.
+- Pháo không bị phá hủy nên số chỗ của một khẩu không bao giờ đổi.
+- `mag` là số đạn trong băng của khẩu đó. Đối phương chỉ thấy `type`, không thấy `mag`.
+
+**`state`** (snapshot trận): gồm `match_id`, `turn` (`player` kiểu `user`, `deadline_ms`, `paused`), `chest` (`tier`, `opened`, hoặc `null`) và `teams` (mỗi đội có `team_id`, `name` và mảng `ships`). Ví dụ đầy đủ ở mục 7.
 
 ---
 
@@ -203,7 +212,7 @@ Response luôn thuộc về request duy nhất đang chờ trên kết nối đ�
 | 3005 | USERNAME_TAKEN | Tên đăng nhập đã tồn tại |
 | 3006 | INVALID_USERNAME | Tên đăng nhập không hợp lệ |
 | 3007 | INVALID_PASSWORD | Mật khẩu không đạt yêu cầu |
-| **4001** | FORBIDDEN | Không đủ quyền |
+| **4001** | FORBIDDEN | Có quyền dùng lệnh nhưng không được làm với đối tượng này: đội trưởng xóa đội khác, admin khóa chính mình hoặc admin khác |
 | 4002 | NOT_CAPTAIN | Chỉ đội trưởng được làm |
 | 4003 | NOT_ADMIN | Chỉ admin được làm |
 | **5001** | TEAM_NOT_FOUND | Không tìm thấy đội |
@@ -229,15 +238,16 @@ Response luôn thuộc về request duy nhất đang chờ trên kết nối đ�
 | 7002 | NOT_YOUR_TURN | Chưa tới lượt |
 | 7003 | SHIP_DESTROYED | Tàu của mình đã bị hạ |
 | 7004 | NOT_ENOUGH_COIN | Không đủ coin |
-| 7005 | SLOT_FULL | Hết slot (pháo, tên lửa) |
+| 7005 | SLOT_FULL | Hết chỗ lắp pháo (đã đủ 3 laze) hoặc đã đủ 4 tên lửa |
 | 7006 | INVALID_TARGET | Mục tiêu không hợp lệ (đồng đội, đã chết, không tồn tại) |
-| 7007 | INVALID_ATTACK | Trộn 2 loại pháo, số lượng sai, hoặc không chọn vũ khí nào |
-| 7008 | NO_AMMO | Không đủ đạn để bắn với số lượng đã chọn |
+| 7007 | INVALID_ATTACK | Trộn 2 loại pháo, chọn trùng khẩu, số tên lửa sai, hoặc không chọn vũ khí nào |
+| 7008 | NO_AMMO | Khẩu được chọn đã hết đạn, hoặc không đủ tên lửa |
 | 7009 | NO_RESERVE | Hết thùng đạn hoặc bộ nguồn để reload |
 | 7010 | HP_FULL | HP đã đầy |
 | 7011 | NO_CHEST | Lượt này không có rương hoặc rương đã mở |
 | 7012 | CHEST_ACTIVE | Đang mở rương, chỉ được trả lời câu hỏi |
 | 7013 | CHEST_EXPIRED | Hết giờ trả lời rương |
+| 7014 | NO_GUN | Chỗ được chọn chưa lắp pháo |
 | **9001** | INTERNAL_ERROR | Lỗi phía server, hoặc server đang ở chế độ chỉ đọc do lỗi ghi DB (DATABASE.md mục 2.3) |
 | 9002 | SERVER_BUSY | Server quá tải, thử lại sau |
 
@@ -252,6 +262,10 @@ Cột **Quyền**:
 - `A`: admin
 - `P`: đang trong trận, và đúng lượt mình (trừ khi có ghi chú khác)
 
+Lỗi chung theo nhóm quyền:
+- Lệnh `C` khi chưa có đội: `5005`; có đội nhưng không phải đội trưởng: `4002`. Lệnh `A` khi không phải admin: `4003`.
+- Lệnh trong trận khi không ở trong trận: `7001`. Tàu của mình đã bị hạ: `7003` (trừ `GAME_STATE`). Chưa tới lượt: `7002` (trừ `GAME_STATE`, `RELOAD`). Đang mở rương: mọi lệnh trừ `CHEST_ANSWER` và `GAME_STATE` bị trả `7012`.
+
 ### 4.1. Chung
 | Lệnh | Quyền | Tham số | `data` trả về |
 |---|---|---|---|
@@ -261,9 +275,9 @@ Cột **Quyền**:
 | Lệnh | Quyền | Tham số | `data` trả về |
 |---|---|---|---|
 | `REGISTER` | * | `username`, `password` | |
-| `LOGIN` | * | `username`, `password` | `{"username", "role", "team_id"}` |
+| `LOGIN` | * | `username`, `password` | `{"user_id", "username", "role", "team_id"}` |
 | `LOGOUT` | U | | |
-| `WHOAMI` | U | | `{"username", "role", "team_id", "is_captain", "state"}` |
+| `WHOAMI` | U | | `{"user_id", "username", "role", "team_id", "is_captain", "state"}` |
 | `CHANGE_PASSWORD` | U | `old_password`, `new_password` | |
 
 Quy định:
@@ -301,26 +315,28 @@ Quy định:
 |---|---|---|---|
 | `TEAM_CREATE` | U | `name` | `{"team_id"}` |
 | `TEAM_DELETE` | C, A | `team_id` | |
-| `TEAM_LIST` | U | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"teams": [...], "has_more", "next_offset"}` |
-| `TEAM_MEMBERS` | U | `team_id` | `{"members": [{"slot", "username", "is_captain", "online"}]}` |
+| `TEAM_LIST` | U | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"teams": [{"team_id", "name", "captain", "size", "state"}], "next_offset"}` |
+| `TEAM_MEMBERS` | U | `team_id` | `{"members": [member]}` |
 | `TEAM_JOIN_REQUEST` | U | `team_id` | |
-| `TEAM_JOIN_LIST` | C | | `{"requests": ["username", ...]}` |
-| `TEAM_JOIN_REPLY` | C | `username`, `accept` (bool) | |
-| `TEAM_INVITE` | C | `username` | |
-| `TEAM_INVITE_LIST` | U | | `{"invites": [{"team_id", "team_name", "from"}]}` |
+| `TEAM_JOIN_LIST` | C | | `{"requests": [user]}` |
+| `TEAM_JOIN_REPLY` | C | `user_id`, `accept` (bool) | |
+| `PLAYER_LIST` | U | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"players": [user], "next_offset"}` |
+| `TEAM_INVITE` | C | `user_id` | |
+| `TEAM_INVITE_LIST` | U | | `{"invites": [{"team_id", "team_name", "from"}]}` (`from` là `user`) |
 | `TEAM_INVITE_REPLY` | U | `team_id`, `accept` (bool) | |
 | `TEAM_LEAVE` | U | | |
-| `TEAM_KICK` | C, A | `username` | |
-| `TEAM_TRANSFER` | C | `username` | |
+| `TEAM_KICK` | C, A | `user_id` | |
+| `TEAM_TRANSFER` | C | `user_id` | |
 
 Quy định:
 - **Tên đội:** 1–30 ký tự UTF-8.
-- **`TEAM_DELETE` và `TEAM_KICK`:** đội trưởng chỉ làm được với đội mình, admin làm được với mọi đội. Đội ở trạng thái `LOBBY` hoặc `IN_MATCH` thì bị từ chối với mã `5006`, **kể cả admin**.
+- **`TEAM_DELETE` và `TEAM_KICK`:** đội trưởng chỉ làm được với đội mình (`TEAM_DELETE` đội khác: `4001`; `TEAM_KICK` người không ở đội mình: `5008`), admin làm được với mọi đội. Đội ở trạng thái `LOBBY` hoặc `IN_MATCH` thì bị từ chối với mã `5006`, **kể cả admin**.
 - Khi một người vào được đội (qua lời xin vào hoặc lời mời):
   - Mọi lời xin vào đội khác và mọi lời mời khác của người đó bị hủy.
   - Nếu đội vừa đủ 3 người thì mọi lời xin vào và lời mời còn treo của đội đó cũng bị hủy.
 - **Đội là party, chỉ nằm trong RAM** (SPEC.md mục 3). Người chơi offline khi đội không ở trong trận thì tự rời đội (đồng đội nhận `TEAM_UPDATE`), và mọi lời xin vào, lời mời của họ bị hủy.
-- `TEAM_INVITE` tới người đang offline thì bị từ chối với mã `5011`.
+- `PLAYER_LIST` chỉ liệt kê người **đang online và chưa có đội**, tức những người mời được; không có chính người gọi. Đội trưởng chọn từ danh sách này rồi gửi `TEAM_INVITE` với `user_id`.
+- `TEAM_INVITE` với `user_id` không tồn tại: `5007`. Tới người vừa offline: `5011`. Tới người vừa vào đội khác: `5004`.
 
 ### 4.4. Thách đấu và sảnh chờ
 | Lệnh | Quyền | Tham số | `data` trả về |
@@ -350,17 +366,17 @@ Quy định:
 | `GAME_STATE` | trong trận, bất kỳ lúc nào | (trả về snapshot mới nhất trong `data`) |
 | `BUY` | P | `item`, `qty` |
 | `REPAIR` | P | `hp` |
-| `RELOAD` | trong trận, **bất kỳ lúc nào** | `weapon` (`"AUTO"` / `"LASER"`), `index` (số thứ tự khẩu laze, bắt đầu từ 0) |
+| `RELOAD` | trong trận, **bất kỳ lúc nào** | `index` (chỗ lắp pháo 0–3, xem `guns` ở mục 2.5) |
 | `CHEST_OPEN` | P | |
 | `CHEST_ANSWER` | P, đang mở rương | `choice` (`"A"` / `"B"` / `"C"` / `"D"`) |
-| `ATTACK` | P | `target` (username), `gun`, `missiles` |
+| `ATTACK` | P | `target` (`user_id`), `indexes`, `missiles` |
 
 **Các giá trị `item` của `BUY`:**
 
 | `item` | Giá | Hiệu ứng |
 |---|---|---|
 | `AMMO_BOX` | 100 | +1 thùng đạn (50 viên) vào kho của pháo tự động |
-| `LASER` | 1000 | +1 pháo laze, băng rỗng (0/10). Tối đa 3 khẩu |
+| `LASER` | 1000 | +1 pháo laze, băng rỗng (0/10), lắp vào chỗ trống nhỏ nhất trong 1–3. Tối đa 3 khẩu |
 | `POWER_PACK` | 100 | +1 bộ nguồn (10 phát) vào kho chung của laze |
 | `MISSILE` | 2000 | +1 tên lửa. Tối đa 4 quả |
 | `ARMOR_BASIC` | 1000 | +1 lớp giáp cơ bản, 500 Amor |
@@ -369,39 +385,46 @@ Quy định:
 - Mua thì kiểm tra theo kiểu **tất cả hoặc không**: không đủ coin hoặc không đủ slot cho toàn bộ `qty` thì từ chối cả lệnh.
 - `ARMOR_*` chỉ được mua với `qty = 1`.
 
+**`RELOAD`:** `index` là chỗ lắp pháo 0–3. Chỗ chưa lắp pháo: `7014`. Kho thùng đạn (chỗ 0) hoặc kho bộ nguồn (chỗ 1–3) đã hết: `7009`. Giá trị ngoài 0–3: `2003`.
+
+**`CHEST_ANSWER`** khi chưa mở rương: `7011`.
+
 **`REPAIR`:** `hp` là số HP muốn hồi. Nếu `hp` vượt quá phần HP còn thiếu so với 1000 thì chỉ hồi tới 1000 và chỉ trừ coin cho phần thực sự hồi.
 
 **`ATTACK`:**
 ```json
-{"cmd": "ATTACK", "target": "minh",
- "gun": {"type": "LASER", "count": 2}, "missiles": 1}
+{"cmd": "ATTACK", "target": 4,
+ "indexes": [1, 2], "missiles": 1}
 ```
-- `gun` không bắt buộc. Nếu có thì `type` là `"AUTO"` hoặc `"LASER"`, và `count` là số khẩu bắn (với `AUTO` thì `count` luôn bằng 1).
+- `indexes` không bắt buộc, là mảng các chỗ lắp pháo (0–3) sẽ bắn, mỗi khẩu bắn 1 phát. Ví dụ `[0]` là bắn pháo tự động, `[1, 2]` là bắn laze ở chỗ 1 và 2.
+  - Không được trộn chỗ 0 với chỗ 1–3, và không được chọn trùng một chỗ (`7007`).
+  - Chỗ chưa lắp pháo: `7014`. Khẩu được chọn đã hết đạn: `7008`.
+  - Giá trị ngoài 0–3 hoặc không phải số nguyên: `2003`.
 - `missiles` không bắt buộc, mặc định 0.
-- Phải có ít nhất 1 trong 2 phần `gun` và `missiles`.
-- **Chọn khẩu laze nào bắn:** server tự chọn `count` khẩu đang còn đạn, ưu tiên khẩu có số thứ tự nhỏ hơn.
+- Phải có ít nhất 1 trong 2 phần `indexes` (không rỗng) và `missiles`.
 - Bắn thành công thì lượt kết thúc ngay.
 
 ### 4.6. Admin
 | Lệnh | Quyền | Tham số | `data` trả về |
 |---|---|---|---|
-| `ADMIN_USER_LIST` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"users": [...], "has_more", "next_offset"}` |
-| `ADMIN_LOCK` | A | `username`, `locked` (bool) | |
-| `ADMIN_LOG` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"lines": [...], "has_more", "next_offset"}` |
-| `ADMIN_QUESTION_LIST` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"questions": [...], "has_more", "next_offset"}` |
+| `ADMIN_USER_LIST` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"users": [{"user_id", "username", "role", "locked", "online"}], "next_offset"}` |
+| `ADMIN_LOCK` | A | `user_id`, `locked` (bool) | |
+| `ADMIN_LOG` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"lines": [...], "next_offset"}` |
+| `ADMIN_QUESTION_LIST` | A | `offset` (mặc định 0), `limit` (mặc định 20, tối đa 50) | `{"questions": [...], "next_offset"}` |
 | `ADMIN_QUESTION_ADD` | A | `tier`, `question`, `choices` (4 chuỗi), `answer` | `{"question_id"}` |
 | `ADMIN_QUESTION_DELETE` | A | `question_id` | |
 
 - `tier`: `"BRONZE"`, `"SILVER"` hoặc `"GOLD"`.
 - `ADMIN_LOCK` với người đang online: server gửi event `FORCE_LOGOUT` rồi ngắt phiên. Nếu người đó đang trong trận thì tàu tính là bị hạ (HP = 0).
-- Admin không khóa được chính mình hoặc admin khác.
+- Admin không khóa được chính mình hoặc admin khác (`4001`). `user_id` không tồn tại: `5007`.
+- `ADMIN_QUESTION_DELETE` với `question_id` không tồn tại: `2003`.
 
 ### 4.7. Phân trang danh sách
 
 - `offset` là vị trí phần tử đầu tiên, mặc định `0`; `limit` là số phần tử tối đa muốn nhận, mặc định `20` và không lớn hơn `50`.
-- Response trả `has_more` và `next_offset`; `next_offset` bằng `null` khi đã hết dữ liệu.
-- Để toàn bộ message không vượt quá 8192 byte, server có thể trả ít hơn `limit` phần tử. Nếu vẫn còn dữ liệu thì `has_more` là `true` và client tiếp tục bằng `next_offset`.
-- Thứ tự phải ổn định: đội theo `team_id` tăng dần, tài khoản theo `username`, câu hỏi theo `question_id`, log theo thứ tự từ cũ đến mới.
+- Response trả `next_offset`: vị trí để lấy trang tiếp theo, bằng `null` khi đã hết dữ liệu.
+- Để toàn bộ message không vượt quá 8192 byte, server có thể trả ít hơn `limit` phần tử. Nếu vẫn còn dữ liệu thì `next_offset` khác `null` và client tiếp tục bằng giá trị đó.
+- Thứ tự phải ổn định: đội theo `team_id` tăng dần, tài khoản và người chơi theo `user_id`, câu hỏi theo `question_id`, log theo thứ tự từ cũ đến mới.
 - Nếu dữ liệu thay đổi trong lúc tải nhiều trang, client có thể tải lại từ `offset = 0` để tránh hiển thị danh sách lệch.
 
 ---
@@ -416,13 +439,13 @@ Quy định:
 ### 5.2. Đội
 | Event | Người nhận | `data` |
 |---|---|---|
-| `JOIN_REQUEST` | Đội trưởng | `{"username"}` |
+| `JOIN_REQUEST` | Đội trưởng | `{"user_id", "username"}` |
 | `JOIN_RESULT` | Người xin vào | `{"team_id", "accepted"}` |
-| `INVITE` | Người được mời | `{"team_id", "team_name", "from"}` |
-| `INVITE_RESULT` | Đội trưởng | `{"username", "accepted"}` |
+| `INVITE` | Người được mời | `{"team_id", "team_name", "from"}` (`from` là `user`) |
+| `INVITE_RESULT` | Đội trưởng | `{"user_id", "username", "accepted"}` |
 | `TEAM_UPDATE` | Mọi thành viên trong đội | `{"team_id", "members": [...]}` (gửi khi có người vào, rời, bị kick, hoặc đổi đội trưởng) |
-| `KICKED` | Người bị kick | `{"team_id", "by"}` |
-| `TEAM_DELETED` | Mọi thành viên trong đội | `{"team_id", "by"}` |
+| `KICKED` | Người bị kick | `{"team_id", "by"}` (`by` là `user`) |
+| `TEAM_DELETED` | Mọi thành viên trong đội | `{"team_id", "by"}` (`by` là `user`) |
 
 ### 5.3. Thách đấu và sảnh chờ
 | Event | Người nhận | `data` |
@@ -444,15 +467,23 @@ Mọi event trong trận đều kèm trường `state`, là snapshot mới nhấ
 | `CHEST_DROP` | Mọi người trong trận | `{"player", "tier"}` |
 | `CHEST_QUESTION` | Người đang tới lượt và **đồng đội** | `{"tier", "question", "choices", "deadline_ms", "can_answer"}` |
 | `CHEST_RESULT` | Đội của người đang tới lượt: bản đầy đủ. Đối phương: bản rút gọn | Bản đầy đủ: `{"correct", "answer", "coin", "state"}` (khi trả lời sai hoặc hết giờ thì `answer` là đáp án đúng). Bản rút gọn: `{"correct", "coin"}` |
-| `PURCHASE` | Mọi người trong trận | `{"player", "item", "qty", "state"}` |
-| `REPAIR` | Mọi người trong trận | `{"player", "hp", "state"}` |
-| `RELOAD` | Mọi người trong trận | `{"player", "weapon", "index", "state"}` |
-| `ATTACK` | Mọi người trong trận | `{"attacker", "target", "gun", "missiles", "damage", "armor_lost", "hp_lost", "destroyed", "state"}` |
-| `TURN_SKIPPED` | Mọi người trong trận | `{"player", "reason", "state"}` (`reason` là `"TIMEOUT"` hoặc `"DISCONNECTED"`) |
-| `PLAYER_DISCONNECTED` | Mọi người trong trận | `{"player", "state"}` |
-| `PLAYER_RECONNECTED` | Mọi người trong trận | `{"player", "state"}` |
-| `SHIP_DESTROYED` | Mọi người trong trận | `{"player", "reason", "state"}` (`reason` là `"ATTACK"` hoặc `"LOCKED"`) |
-| `MATCH_END` | Mọi người trong trận | `{"winner_team_id", "loser_team_id", "reason", "turns", "stats", "state"}` (`reason` là `"ELIMINATED"` hoặc `"FORFEIT"`; `stats` là mảng `{"username", "team_id", "survived", "damage_dealt"}`) |
+| `MATCH_UPDATE` | Mọi người trong trận | `{"action", ...các trường theo action..., "state"}`, xem bảng dưới |
+| `MATCH_END` | Mọi người trong trận | `{"winner_team_id", "loser_team_id", "reason", "turns", "stats", "state"}` (`reason` là `"ELIMINATED"` hoặc `"FORFEIT"`; `stats` là mảng `{"user_id", "username", "team_id", "survived", "damage_dealt"}`) |
+
+**`MATCH_UPDATE`:** báo một thay đổi trong trận. `action` cho biết chuyện gì vừa xảy ra; mọi `action` đều kèm `state`.
+
+| `action` | Khi nào | Các trường thêm |
+|---|---|---|
+| `PURCHASE` | Sau `BUY` thành công | `player`, `item`, `qty` |
+| `REPAIR` | Sau `REPAIR` thành công | `player`, `hp` |
+| `RELOAD` | Sau `RELOAD` thành công | `player`, `index` |
+| `ATTACK` | Sau `ATTACK` thành công | `attacker`, `target`, `indexes`, `missiles`, `damage`, `armor_lost`, `hp_lost`, `destroyed` |
+| `TURN_SKIPPED` | Hết giờ lượt, hoặc tới lượt người đang offline | `player`, `reason` (`"TIMEOUT"` hoặc `"DISCONNECTED"`) |
+| `DISCONNECTED` | Một người trong trận mất kết nối | `player` |
+| `RECONNECTED` | Người đó đăng nhập lại | `player` |
+| `SHIP_DESTROYED` | Một tàu bị hạ | `player`, `reason` (`"ATTACK"` hoặc `"LOCKED"`) |
+
+Ví dụ: `{"type":"evt","evt":"MATCH_UPDATE","data":{"action":"ATTACK","attacker":{"user_id":1,"username":"son"},"target":{"user_id":4,"username":"minh"},"indexes":[1,2],"missiles":1,"damage":1000,"armor_lost":500,"hp_lost":500,"destroyed":false,"state":{...}}}`
 
 - **`can_answer`:** `true` với người đang tới lượt, `false` với đồng đội (chỉ được xem).
 - **`deadline_ms`:** thời điểm hết hạn, tính theo đồng hồ server (unix ms). Client tự tính thời gian còn lại bằng cách so với `time` nhận được từ `PING`.
@@ -469,13 +500,13 @@ Mọi event trong trận đều kèm trường `state`, là snapshot mới nhấ
 5. **Nếu mở rương:**
    - Đồng hồ lượt **tạm dừng**, đồng hồ rương bắt đầu chạy.
    - Server gửi `CHEST_QUESTION` cho đội của người đang tới lượt.
-   - Mọi lệnh khác của người đó đều bị từ chối với mã `7012`, **kể cả `RELOAD`**.
+   - Mọi lệnh khác của người đó (trừ `GAME_STATE`) đều bị từ chối với mã `7012`, **kể cả `RELOAD`**.
    - Khi có `CHEST_ANSWER` hoặc hết giờ rương: gửi `CHEST_RESULT`, đồng hồ lượt chạy tiếp.
-6. **`ATTACK` thành công:** gửi event `ATTACK`, kiểm tra kết thúc trận, rồi sang lượt tiếp theo.
-7. **Hết giờ lượt:** gửi `TURN_SKIPPED` (`TIMEOUT`), sang lượt tiếp theo.
-8. **Người đang tới lượt bị disconnect:** bị bỏ qua lượt ngay (`TURN_SKIPPED` với `DISCONNECTED`).
+6. **`ATTACK` thành công:** gửi `MATCH_UPDATE` (`ATTACK`, rồi `SHIP_DESTROYED` nếu có tàu bị hạ), kiểm tra kết thúc trận, rồi sang lượt tiếp theo.
+7. **Hết giờ lượt:** gửi `MATCH_UPDATE` (`TURN_SKIPPED`, `reason: TIMEOUT`), sang lượt tiếp theo.
+8. **Người đang tới lượt bị disconnect:** bị bỏ qua lượt ngay (`MATCH_UPDATE` với `action: TURN_SKIPPED`, `reason: DISCONNECTED`).
    - Ở các lượt sau, nếu người đó vẫn chưa kết nối lại thì cũng bị bỏ qua ngay, không phải chờ hết giờ.
-   - Người đó **đăng nhập lại được trong lúc trận còn diễn ra**. Đăng nhập lại thì được đưa về trận (nhận event `MATCH_RESUME`), và mọi người nhận `PLAYER_RECONNECTED`.
+   - Người đó **đăng nhập lại được trong lúc trận còn diễn ra**. Đăng nhập lại thì được đưa về trận (nhận event `MATCH_RESUME`), và mọi người nhận `MATCH_UPDATE` với `action: RECONNECTED`.
    - Cả một đội offline liên tục 120 giây thì đội đó thua (`MATCH_END` với `reason: "FORFEIT"`).
    - Thành viên bất kỳ mất kết nối khi đang ở sảnh chờ thì rời đội và sảnh chờ bị đóng (`LOBBY_CLOSED`).
 9. Rương chưa mở mà hết lượt thì rương biến mất.
@@ -488,27 +519,32 @@ Mọi event trong trận đều kèm trường `state`, là snapshot mới nhấ
 
 Mỗi người nhận một snapshot **riêng**:
 - Với tàu của mình và tàu của đồng đội: thấy đầy đủ mọi thông tin.
-- Với tàu đối phương: chỉ thấy HP, giáp, số khẩu laze và số tên lửa. **Coin và đạn được giấu đi.**
+- Với tàu đối phương: chỉ thấy HP, giáp, các khẩu pháo đang lắp (không có `mag`) và số tên lửa. **Coin và đạn được giấu đi.**
 
 ```json
 {
   "match_id": 3,
-  "turn": {"player": "son", "deadline_ms": 1762862400000, "paused": false},
+  "turn": {"player": {"user_id": 1, "username": "son"}, "deadline_ms": 1762862400000, "paused": false},
   "chest": {"tier": "GOLD", "opened": false},
   "teams": [
     {
       "team_id": 5, "name": "Rong Bay",
       "ships": [
         {
-          "username": "son", "slot": 0, "online": true, "alive": true,
+          "user_id": 1, "username": "son", "slot": 0, "online": true, "alive": true,
           "hp": 820,
           "armor": [
             {"type": "BASIC", "amor": 500},
             {"type": "ADVANCED", "amor": 1200}
           ],
           "coin": 1500,
-          "auto": {"mag": 37, "boxes": 3},
-          "lasers": [{"mag": 7}, {"mag": 10}],
+          "guns": [
+            {"type": "AUTO", "mag": 37},
+            {"type": "LASER", "mag": 7},
+            {"type": "LASER", "mag": 10},
+            null
+          ],
+          "ammo_boxes": 3,
           "power_packs": 2,
           "missiles": 2
         }
@@ -518,10 +554,11 @@ Mỗi người nhận một snapshot **riêng**:
       "team_id": 8, "name": "Sao Bang",
       "ships": [
         {
-          "username": "minh", "slot": 0, "online": true, "alive": true,
+          "user_id": 4, "username": "minh", "slot": 0, "online": true, "alive": true,
           "hp": 1000,
           "armor": [{"type": "BASIC", "amor": 500}],
-          "laser_count": 1, "missiles": 0
+          "guns": [{"type": "AUTO"}, {"type": "LASER"}, null, null],
+          "missiles": 0
         }
       ]
     }
@@ -538,13 +575,15 @@ Mỗi người nhận một snapshot **riêng**:
 
 ```
 C: {"cmd":"LOGIN","username":"son","password":"123456"}
-S: {"type":"res","code":1000,"msg":"OK","data":{"username":"son","role":"PLAYER","team_id":null}}
+S: {"type":"res","code":1000,"msg":"OK","data":{"user_id":1,"username":"son","role":"PLAYER","team_id":null}}
 C: {"cmd":"TEAM_CREATE","name":"Rong Bay"}
 S: {"type":"res","code":1000,"msg":"OK","data":{"team_id":5}}
-C: {"cmd":"TEAM_INVITE","username":"lan"}
+C: {"cmd":"PLAYER_LIST"}
+S: {"type":"res","code":1000,"msg":"OK","data":{"players":[{"user_id":2,"username":"lan"}],"next_offset":null}}
+C: {"cmd":"TEAM_INVITE","user_id":2}
 S: {"type":"res","code":1000,"msg":"OK"}
         ... (lan chấp nhận lời mời) ...
-S: {"type":"evt","evt":"INVITE_RESULT","data":{"username":"lan","accepted":true}}
+S: {"type":"evt","evt":"INVITE_RESULT","data":{"user_id":2,"username":"lan","accepted":true}}
 S: {"type":"evt","evt":"TEAM_UPDATE","data":{"team_id":5,"members":[...]}}
 C: {"cmd":"CHALLENGE_SEND","team_id":8}
 S: {"type":"res","code":1000,"msg":"OK"}
@@ -552,18 +591,18 @@ S: {"type":"res","code":1000,"msg":"OK"}
 C: {"cmd":"LOBBY_START"}
 S: {"type":"res","code":1000,"msg":"OK"}
 S: {"type":"evt","evt":"MATCH_START","data":{...}}
-S: {"type":"evt","evt":"TURN_START","data":{"player":"son",...}}
-S: {"type":"evt","evt":"CHEST_DROP","data":{"player":"son","tier":"SILVER"}}
+S: {"type":"evt","evt":"TURN_START","data":{"player":{"user_id":1,"username":"son"},...}}
+S: {"type":"evt","evt":"CHEST_DROP","data":{"player":{"user_id":1,"username":"son"},"tier":"SILVER"}}
 C: {"cmd":"CHEST_OPEN"}
 S: {"type":"res","code":1000,"msg":"OK"}
 S: {"type":"evt","evt":"CHEST_QUESTION","data":{"tier":"SILVER","question":"...","choices":["...","...","...","..."],"can_answer":true,...}}
 C: {"cmd":"CHEST_ANSWER","choice":"B"}
 S: {"type":"res","code":1000,"msg":"OK"}
 S: {"type":"evt","evt":"CHEST_RESULT","data":{"correct":true,"coin":500,...}}
-C: {"cmd":"ATTACK","target":"minh","gun":{"type":"AUTO","count":1}}
+C: {"cmd":"ATTACK","target":4,"indexes":[0]}
 S: {"type":"res","code":1000,"msg":"OK"}
-S: {"type":"evt","evt":"ATTACK","data":{"attacker":"son","target":"minh","damage":10,...}}
-S: {"type":"evt","evt":"TURN_START","data":{"player":"minh",...}}
+S: {"type":"evt","evt":"MATCH_UPDATE","data":{"action":"ATTACK","attacker":{"user_id":1,"username":"son"},"target":{"user_id":4,"username":"minh"},"damage":10,...}}
+S: {"type":"evt","evt":"TURN_START","data":{"player":{"user_id":4,"username":"minh"},...}}
 ```
 
 ---
@@ -580,7 +619,7 @@ S: {"type":"evt","evt":"TURN_START","data":{"player":"minh",...}}
 5. Mỗi request nhận được **đúng 1 response**, trừ khi kết nối bị đóng trước.
 6. Mỗi kết nối chỉ được có **một request đang chờ response**. Client khóa thao tác hoặc xếp request mới vào hàng đợi cục bộ cho tới khi nhận response trước.
 7. **Thứ tự:** server xử lý request của **cùng một kết nối** theo đúng thứ tự nhận. Nếu client lỗi gửi nối tiếp nhiều request, server không xử lý request sau cho tới khi request trước hoàn tất. Các kết nối khác không bị ảnh hưởng.
-8. Response của một request luôn được đưa vào buffer gửi **trước** các event do chính request đó gây ra. Ví dụ: `res` của `ATTACK` đứng trước event `ATTACK` và `TURN_START`.
+8. Response của một request luôn được đưa vào buffer gửi **trước** các event do chính request đó gây ra. Ví dụ: `res` của `ATTACK` đứng trước event `MATCH_UPDATE` (`ATTACK`) và `TURN_START`.
 9. Event do kết nối khác hoặc timer tạo ra vẫn có thể đến trong lúc client đang chờ response. Client phân biệt bằng trường `type`: `res` thuộc request duy nhất đang chờ, còn `evt` chuyển cho bộ xử lý event.
 
 ### 9.3. Kiểm tra theo thứ tự cố định

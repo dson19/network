@@ -14,6 +14,6 @@ sequenceDiagram
     S->>S: tài khoản đang có phiên ở C1
     S->>C1: FORCE_LOGOUT {reason:REPLACED} (có thể không tới nơi)
     S->>S: đóng C1, chuyển phiên sang C2
-    S-->>C2: res 1000 {state:...}
-    Note over C2,S: Nếu đang trong trận: gửi tiếp MATCH_RESUME<br/>Người khác không nhận PLAYER_DISCONNECTED vì phiên không bị gián đoạn
+    S-->>C2: res 1000 {user_id, username, role, team_id}
+    Note over C2,S: Nếu đang trong trận: gửi tiếp MATCH_RESUME<br/>Người khác không nhận MATCH_UPDATE DISCONNECTED vì phiên không bị gián đoạn
 ```

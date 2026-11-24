@@ -19,7 +19,7 @@ sequenceDiagram
         X--xS: mất kết nối
         S->>S: rương mất, bỏ qua lượt
         S->>O: CHEST_RESULT {correct:false, coin:0} cho đội X
-        S->>O: TURN_SKIPPED {player:X, reason:DISCONNECTED}
+        S->>O: MATCH_UPDATE {action:TURN_SKIPPED, player:X, reason:DISCONNECTED}
     else X không ở sảnh chờ, không trong trận
         X--xS: mất kết nối
         S->>S: hủy phiên, X tự rời đội, hủy lời mời và lời xin vào của X

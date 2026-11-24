@@ -62,6 +62,7 @@ void NetClient::request(const QString &cmd, const QJsonObject &params, ResponseC
 - Message có `type = "res"` luôn thuộc request đang chờ: gọi `cb` của nó, rồi gửi request kế tiếp trong hàng đợi (nếu có).
 - Request quá **15 giây** mà chưa có response: gọi `cb` với mã lỗi nội bộ của client `CLIENT_TIMEOUT`, rồi coi như kết nối có vấn đề và chuyển sang kết nối lại.
 - Event về thì chuyển sang `ClientState::onEvent(evt, data)`.
+- `ClientState` lưu `user_id` của mình từ response `LOGIN`. Để biết một event có nói về mình không (ví dụ tới lượt mình, tàu mình bị hạ), client so `user_id` trong `player`/`target` với giá trị này, không so `username`.
 
 ### 2.3. Giữ kết nối và kết nối lại
 - Gửi `PING` mỗi 20 giây. Response của `PING` dùng để cập nhật độ lệch đồng hồ (`Clock`).
@@ -72,7 +73,7 @@ void NetClient::request(const QString &cmd, const QJsonObject &params, ResponseC
 ### 2.4. Đồng hồ (`Clock`)
 - Mỗi response `PING` có `time` (giờ server). Client tính `offset = time - (lúc gửi + lúc nhận) / 2`.
 - Thời gian còn lại của lượt = `deadline_ms - (giờ máy + offset)`.
-- Đếm ngược chạy bằng `QTimer` 250 ms và chỉ để hiển thị. Hết giờ thì client **không tự làm gì**, mà chờ event `TURN_SKIPPED` của server.
+- Đếm ngược chạy bằng `QTimer` 250 ms và chỉ để hiển thị. Hết giờ thì client **không tự làm gì**, mà chờ event `MATCH_UPDATE` (`action: TURN_SKIPPED`) của server.
 
 ---
 
@@ -115,6 +116,7 @@ Phác thảo bố cục, không phải thiết kế đồ họa cuối cùng.
 └───────────────────────────────────────────────────────────────────────┘
 ```
 - **Tab "Đội của tôi":** 3 slot cố định. Đội trưởng có thêm các nút Mời, Kick, Chuyển đội trưởng, Xóa đội, và danh sách lời xin vào kèm nút Duyệt/Từ chối. Mọi người có nút Rời đội.
+- **Nút Mời** mở hộp thoại danh sách người đang online và chưa có đội (`PLAYER_LIST`, nút "Tải thêm" theo `next_offset`). Đội trưởng bấm chọn một người, client gửi `TEAM_INVITE` với `user_id` của người đó.
 - **Tab "Lời mời"** và **tab "Thách đấu"** có số đếm trên tiêu đề, cập nhật theo event.
 - **Tab "Admin"** chỉ hiện khi `role = ADMIN`: danh sách tài khoản (khóa/mở khóa), xem log, quản lý câu hỏi.
 - Đội đang ở sảnh chờ hoặc trong trận thì các nút thao tác đội bị **làm mờ**, kèm chú thích "Đội đang trong trận".
@@ -163,25 +165,27 @@ Phác thảo bố cục, không phải thiết kế đồ họa cuối cùng.
 │  └──────────────────┘ └──────────────────┘                      │
 ├─────────────────────────────────┬───────────────────────────────┤
 │ VŨ KHÍ CỦA BẠN                  │ CỬA HÀNG                      │
-│ Tự động  37 viên / 3 thùng  [R] │ Thùng đạn  100   [Mua]        │
-│ Laze 1    7 phát            [R] │ Laze      1000   [Mua]        │
-│ Laze 2   10 phát            [R] │ Bộ nguồn   100   [Mua]        │
-│ Bộ nguồn: 2                     │ Tên lửa   2000   [Mua]        │
-│ Tên lửa: 2/4                    │ Giáp CB   1000   [Mua]        │
+│ [0] Tự động 37 viên/3 thùng [R] │ Thùng đạn  100   [Mua]        │
+│ [1] Laze     7 phát         [R] │ Laze      1000   [Mua]        │
+│ [2] Laze    10 phát         [R] │ Bộ nguồn   100   [Mua]        │
+│ [3] (trống)                     │ Tên lửa   2000   [Mua]        │
+│ Bộ nguồn: 2   Tên lửa: 2/4      │ Giáp CB   1000   [Mua]        │
 │                                 │ Giáp TC   2000   [Mua]        │
 │ ┌─ Tấn công ────────────────┐   │ Sửa tàu [ 50 ] HP [Sửa]       │
 │ │ Mục tiêu [ lan        ▾]  │   │                               │
-│ │ Pháo ( ) Không            │   │ 🎁 Rương BẠC  [ Mở rương ]    │
-│ │      ( ) Tự động          │   ├───────────────────────────────┤
-│ │      (•) Laze  số khẩu [2]│   │ NHẬT KÝ TRẬN                  │
+│ │ Pháo [ ] 0 Tự động        │   │ 🎁 Rương BẠC  [ Mở rương ]    │
+│ │      [x] 1 Laze [x] 2 Laze│   ├───────────────────────────────┤
+│ │      [ ] 3 (trống)        │   │ NHẬT KÝ TRẬN                  │
 │ │ Tên lửa  số quả [1]       │   │ son bắn lan: 1000 dmg         │
 │ │ Dự kiến: 1000 Dam         │   │ lan bỏ lượt (hết giờ)         │
 │ │           [ BẮN ▶ ]       │   │ hoa mở rương: đúng +500       │
 │ └───────────────────────────┘   │                               │
 └─────────────────────────────────┴───────────────────────────────┘
 ```
-- **Nút [R]** là reload từng khẩu. Nút này bấm được cả ngoài lượt.
-- **Dự kiến Dam** chỉ để tham khảo (cộng Dam của các vũ khí đã chọn). Kết quả thật luôn lấy từ event `ATTACK`.
+- **Số [0]–[3]** là chỗ lắp pháo, trùng với vị trí trong mảng `guns` của snapshot. Chỗ trống hiện "(trống)".
+- **Nút [R]** là reload từng khẩu, gửi `RELOAD` với `index` là số chỗ đó. Nút này bấm được cả ngoài lượt.
+- **Ô chọn pháo khi tấn công:** tick chỗ 0 thì tự bỏ tick chỗ 1–3 và ngược lại (không trộn 2 loại pháo); khẩu hết đạn hoặc chỗ trống thì làm mờ. Các chỗ được tick gửi trong `ATTACK.indexes`.
+- **Dự kiến Dam** chỉ để tham khảo (cộng Dam của các vũ khí đã chọn). Kết quả thật luôn lấy từ event `MATCH_UPDATE` (`action: ATTACK`).
 - **Bật/tắt nút** theo bảng ở DESIGN.md mục 6.2. Đang chờ response thì làm mờ nút đó để tránh bấm 2 lần.
 - **Nhật ký trận** sinh từ các event. Các dòng giữ trong bộ nhớ, tối đa 200 dòng.
 - **Đối phương:** không hiện coin và đạn, vì server không gửi.
@@ -234,8 +238,8 @@ Hiệu ứng chỉ để hiển thị, luôn chạy **sau khi** nhận event t�
 |---|---|
 | `TURN_START` | Thẻ tàu đang tới lượt sáng viền; đồng hồ chuyển vàng khi còn 10 giây, đỏ khi còn 5 giây |
 | `CHEST_DROP` | Rương rơi xuống góc màn hình, màu theo tier (đồng/bạc/vàng) |
-| `ATTACK` | Tia laze/đạn/tên lửa bay từ tàu bắn sang tàu mục tiêu; tàu mục tiêu rung; thanh giáp rồi thanh HP tụt mượt (`Behavior on value { NumberAnimation }`) |
-| `SHIP_DESTROYED` | Tàu nổ, thẻ tàu chuyển xám |
+| `MATCH_UPDATE` `ATTACK` | Tia laze/đạn/tên lửa bay từ tàu bắn sang tàu mục tiêu; tàu mục tiêu rung; thanh giáp rồi thanh HP tụt mượt (`Behavior on value { NumberAnimation }`) |
+| `MATCH_UPDATE` `SHIP_DESTROYED` | Tàu nổ, thẻ tàu chuyển xám |
 | `CHEST_RESULT` | Rương mở, hiện số coin cộng thêm bay lên |
 | `MATCH_END` | Màn kết quả trượt vào |
 
@@ -257,6 +261,7 @@ Nền màn trận là trời sao chuyển động chậm (`ParticleSystem`), the
 | 7002 | Chưa tới lượt của bạn |
 | 7004 | Không đủ coin |
 | 7007 | Không thể bắn cùng lúc pháo tự động và pháo laze |
+| 7014 | Chỗ này chưa lắp pháo |
 | 9002 | Server đang quá tải, thử lại sau |
 | `CLIENT_TIMEOUT` | Server không phản hồi |
 | `CLIENT_DISCONNECTED` | Mất kết nối, đang thử kết nối lại... |

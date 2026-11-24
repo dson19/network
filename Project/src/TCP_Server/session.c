@@ -216,6 +216,7 @@ void cmd_whoami(Conn *c, const cJSON *req)
     (void)req;
     User *u = c->user;
     cJSON *data = cJSON_CreateObject();
+    cJSON_AddNumberToObject(data, "user_id", (double)u->id);
     cJSON_AddStringToObject(data, "username", u->username);
     cJSON_AddStringToObject(data, "role", role_name(u->role));
     cJSON_AddNullToObject(data, "team_id");     /* chưa có chức năng đội */
@@ -284,6 +285,7 @@ static void finish_login(Conn *c, Job *j)
     attach(c, u);
 
     cJSON *data = cJSON_CreateObject();
+    cJSON_AddNumberToObject(data, "user_id", (double)u->id);
     cJSON_AddStringToObject(data, "username", u->username);
     cJSON_AddStringToObject(data, "role", role_name(u->role));
     cJSON_AddNullToObject(data, "team_id");     /* chưa có chức năng đội */
