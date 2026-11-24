@@ -113,12 +113,12 @@ Các luật về đội (mỗi người 1 đội, tối đa 3 người, đúng 1
 
 Mọi ràng buộc đều đã được kiểm tra trên RAM trước khi ghi, nên lỗi ghi chỉ có thể đến từ ổ đĩa (đầy, hỏng, mất quyền ghi). Khi đó:
 
-1. DB writer ghi log mức `ERROR`, kèm câu lệnh bị lỗi.
+1. DB writer ghi log dòng `SERVER` loại `DB_ERROR`, kèm câu lệnh bị lỗi.
 2. DB writer **thử lại 3 lần**, mỗi lần cách nhau 100 ms.
 3. Vẫn lỗi: server chuyển sang **chế độ chỉ đọc**:
    - Mọi lệnh làm thay đổi dữ liệu lâu dài (đăng ký, đổi mật khẩu, khóa tài khoản, sửa câu hỏi) bị từ chối với mã `9001`.
    - Đội và trận nằm trong RAM nên vẫn chơi tiếp bình thường.
-   - Ghi log mức `FATAL` để admin biết mà xử lý.
+   - Ghi log dòng `SERVER` loại `DB_READONLY` để admin biết mà xử lý.
 
 ### 2.4. Tắt server an toàn
 
@@ -129,7 +129,7 @@ Khi nhận `SIGINT` hoặc `SIGTERM`:
 3. Chờ hàng đợi ghi chạy hết, tối đa 10 giây.
 4. Đóng DB và file log, rồi thoát.
 
-Mọi đội và trận đang dở nằm trong RAM nên mất theo. Mỗi trận đang dở được ghi 1 dòng log `MATCH ABORTED`.
+Mọi đội và trận đang dở nằm trong RAM nên mất theo. Mỗi trận đang dở được ghi 1 dòng log `SERVER` loại `MATCH_ABORTED`.
 
 ---
 
@@ -213,7 +213,7 @@ ANSWER: C
 Quy định:
 - Thứ tự dòng trong khối là cố định: `[TIER]`, `Q:`, `A:`, `B:`, `C:`, `D:`, `ANSWER:`.
 - Mỗi trường nằm trên 1 dòng, tối đa 500 ký tự. Tổng 1 khối không vượt quá giới hạn message 8192 byte khi gửi đi.
-- Khối sai định dạng: bỏ qua khối đó, ghi log `WARN` kèm số dòng, rồi đọc tiếp các khối sau.
+- Khối sai định dạng: bỏ qua khối đó, ghi 1 dòng log `SERVER` kèm số dòng, rồi đọc tiếp các khối sau.
 
 ### 5.2. Khi nào nạp
 

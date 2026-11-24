@@ -1,6 +1,8 @@
 # Thiết kế client
 
-Client là ứng dụng GTK3 chạy trên **1 luồng**. Socket được gắn vào main loop của GTK (lý do: [PROTOCOL.md](PROTOCOL.md) mục 1.5).
+Client viết bằng **C++17 + Qt 5.12 Quick (QML)**, chạy trên **1 luồng**. Riêng tầng socket viết bằng **C11** (yêu cầu của môn: phần socket Linux phải viết bằng C). Socket được gắn vào vòng lặp sự kiện của Qt bằng `QSocketNotifier` (lý do: [PROTOCOL.md](PROTOCOL.md) mục 1.5).
+
+**Ranh giới C / C++:** mọi lời gọi socket (`socket`, `connect`, `send`, `recv`, `close`) chỉ nằm trong `net.c`. Phần C++ không gọi API socket nào và không dùng `QTcpSocket`; nó chỉ lấy `fd` từ `net.c` để biết khi nào socket đọc/ghi được.
 
 - Trạng thái client: [DESIGN.md](DESIGN.md) mục 6.2.
 - Server: [SERVER.md](SERVER.md).
@@ -10,52 +12,67 @@ Client là ứng dụng GTK3 chạy trên **1 luồng**. Socket được gắn v
 ## 1. Các module
 
 ```
-client/
-├── main.c          khởi tạo GTK, đọc tham số, mở cửa sổ chính
-├── net.c/.h        kết nối, tách dòng, gửi request, ghép response, PING, kết nối lại
-├── state.c/.h      dữ liệu client: tài khoản, đội, sảnh chờ, snapshot trận
-├── clock.c/.h      độ lệch đồng hồ với server, đếm ngược
-├── errors.c/.h     đổi mã lỗi thành câu tiếng Việt cho người dùng
-├── ui_login.c      màn đăng nhập / đăng ký
-├── ui_home.c       màn chính: đội, lời mời, thách đấu
-├── ui_admin.c      các tab chỉ admin thấy
-├── ui_lobby.c      sảnh chờ
-├── ui_game.c       màn trận đấu
-├── ui_chest.c      hộp thoại câu hỏi rương
-└── ui_result.c     màn kết quả
+TCP_Client/
+├── client.pro          file qmake (Makefile gốc gọi qmake để build client)
+├── net.c/.h            [C11] socket non-blocking: connect, send (buffer gửi), recv + tách dòng bằng common/linebuf, close
+├── main.cpp            khởi tạo QGuiApplication, đọc tham số, nạp QML, đăng ký NetClient và ClientState
+├── NetClient.cpp/.h    [C++] gắn fd của net.c vào QSocketNotifier, parse/tạo JSON (QJsonDocument),
+│                       quản lý request đang chờ + hàng đợi cục bộ, PING, kết nối lại (QTimer)
+├── ClientState.cpp/.h  [C++] dữ liệu client: tài khoản, đội, sảnh chờ, snapshot trận; đưa sang QML qua Q_PROPERTY/signal
+├── Clock.cpp/.h        [C++] độ lệch đồng hồ với server, đếm ngược
+├── Errors.cpp/.h       [C++] đổi mã lỗi thành câu tiếng Việt cho người dùng
+└── qml/
+    ├── Main.qml        cửa sổ chính, chuyển màn theo ClientState
+    ├── Login.qml       đăng nhập / đăng ký
+    ├── Home.qml        đội, lời mời, thách đấu, tab admin
+    ├── Lobby.qml       sảnh chờ
+    ├── Game.qml        màn trận đấu
+    ├── ChestDialog.qml hộp thoại câu hỏi rương
+    ├── Result.qml      màn kết quả
+    └── components/     ShipCard, HpBar, Countdown, hiệu ứng bắn/nổ
 ```
 
-**Một chiều dữ liệu:** `net` nhận message → `state` cập nhật → `ui_*` vẽ lại theo `state`. Các màn hình không bao giờ tự sửa `state` và không tự tính luật chơi.
+**Một chiều dữ liệu:** `net.c` nhận byte → `NetClient` tách message → `ClientState` cập nhật → QML vẽ lại qua binding. QML gửi lệnh bằng cách gọi `NetClient.request(...)`; QML không bao giờ tự sửa `ClientState` và không tự tính luật chơi.
 
 ---
 
-## 2. Tầng mạng (`net.c`)
+## 2. Tầng mạng (`net.c` + `NetClient`)
 
 ### 2.1. Nhận dữ liệu
-- Mở socket rồi đăng ký vào main loop bằng `g_io_add_watch(channel, G_IO_IN | G_IO_HUP | G_IO_ERR, ...)`.
-- Socket để non-blocking. Callback đọc tới khi `EAGAIN`, rồi dùng `common/linebuf` (chung với server) để tách dòng.
+- `net.c` mở socket non-blocking và trả `fd`. `NetClient` tạo `QSocketNotifier(fd, Read)` để Qt báo khi có dữ liệu, và `QSocketNotifier(fd, Write)` chỉ bật khi buffer gửi của `net.c` còn dữ liệu chưa gửi hết.
+- Khi socket đọc được, `NetClient` gọi `net_read()`. Hàm này đọc tới khi `EAGAIN` và dùng `common/linebuf` (chung với server) để tách dòng; mỗi dòng hoàn chỉnh được trả về cho `NetClient` để parse JSON.
 - Kết nối tới server (`connect`) cũng non-blocking, để giao diện không bị đơ khi server chậm phản hồi.
 
-### 2.2. Gửi request và ghép response
 ```c
-typedef void (*ResponseCb)(int code, const cJSON *data, void *user);
-uint32_t net_request(const char *cmd, cJSON *params, ResponseCb cb, void *user);
+/* net.h - phần C, chỉ chứa thao tác socket */
+int  net_connect(NetConn *c, const char *host, uint16_t port); /* non-blocking, trả fd */
+int  net_send_line(NetConn *c, const char *line);              /* thêm \r\n, đưa vào buffer gửi */
+int  net_flush(NetConn *c);                                    /* gửi tiếp buffer khi socket ghi được */
+int  net_read(NetConn *c, void (*on_line)(const char *line, void *u), void *u);
+void net_close(NetConn *c);
 ```
-- `net_request` gán `id` tăng dần, lưu cặp `id → (cb, user, thời điểm gửi)` vào bảng chờ, rồi gửi đi.
-- Response về thì tra `id` trong bảng chờ và gọi `cb`.
+
+### 2.2. Gửi request và ghép response
+```cpp
+using ResponseCb = std::function<void(int code, const QJsonObject &data)>;
+void NetClient::request(const QString &cmd, const QJsonObject &params, ResponseCb cb);
+```
+- Protocol không có trường `id`: mỗi kết nối chỉ có **1 request đang chờ response** (PROTOCOL.md mục 9.2).
+- `request` gửi ngay nếu không có request nào đang chờ, và ghi lại `(cb, thời điểm gửi)` của request đó. Nếu đang có request chờ thì xếp vào hàng đợi cục bộ (FIFO), gửi khi response trước về.
+- Message có `type = "res"` luôn thuộc request đang chờ: gọi `cb` của nó, rồi gửi request kế tiếp trong hàng đợi (nếu có).
 - Request quá **15 giây** mà chưa có response: gọi `cb` với mã lỗi nội bộ của client `CLIENT_TIMEOUT`, rồi coi như kết nối có vấn đề và chuyển sang kết nối lại.
-- Event về thì chuyển sang `state_on_event(evt, data)`.
+- Event về thì chuyển sang `ClientState::onEvent(evt, data)`.
 
 ### 2.3. Giữ kết nối và kết nối lại
-- Gửi `PING` mỗi 20 giây. Response của `PING` dùng để cập nhật độ lệch đồng hồ (`clock.c`).
-- Mất kết nối khi đã đăng nhập: chuyển sang `RECONNECT_WAIT`, thử lại với backoff 1, 2, 4, 8, 16, 30 giây, sau đó 30 giây một lần. Kết nối được thì tự gửi `LOGIN`.
+- Gửi `PING` mỗi 20 giây. Response của `PING` dùng để cập nhật độ lệch đồng hồ (`Clock`).
+- Mất kết nối khi đã đăng nhập: chuyển sang `RECONNECT_WAIT`, thử lại với backoff 1, 2, 4, 8, 16, 30 giây (đếm bằng `QTimer`), sau đó 30 giây một lần. Mỗi lần thử gọi `net_connect()`. Kết nối được thì tự gửi `LOGIN`.
 - Mật khẩu chỉ giữ trong RAM để tự đăng nhập lại, **không ghi ra đĩa**. Đăng xuất hoặc thoát app thì xóa (ghi đè bằng 0).
-- Mọi request đang chờ khi mất kết nối đều được gọi `cb` với `CLIENT_DISCONNECTED`, để giao diện mở khóa các nút.
+- Request đang chờ và mọi request trong hàng đợi cục bộ khi mất kết nối đều được gọi `cb` với `CLIENT_DISCONNECTED`, để giao diện mở khóa các nút.
 
-### 2.4. Đồng hồ (`clock.c`)
+### 2.4. Đồng hồ (`Clock`)
 - Mỗi response `PING` có `time` (giờ server). Client tính `offset = time - (lúc gửi + lúc nhận) / 2`.
 - Thời gian còn lại của lượt = `deadline_ms - (giờ máy + offset)`.
-- Đếm ngược chạy bằng `g_timeout_add(250, ...)` và chỉ để hiển thị. Hết giờ thì client **không tự làm gì**, mà chờ event `TURN_SKIPPED` của server.
+- Đếm ngược chạy bằng `QTimer` 250 ms và chỉ để hiển thị. Hết giờ thì client **không tự làm gì**, mà chờ event `TURN_SKIPPED` của server.
 
 ---
 
@@ -207,13 +224,28 @@ Phác thảo bố cục, không phải thiết kế đồ họa cuối cùng.
 │                              [ Về màn chính ]  │
 └────────────────────────────────────────────────┘
 ```
-Để có số liệu sát thương cho màn này, `MATCH_END` cần thêm trường `stats` (xem PROTOCOL.md mục 5.4).
+Số liệu của màn này lấy từ trường `turns` và `stats` của event `MATCH_END` (PROTOCOL.md mục 5.4).
+
+### 3.7. Hiệu ứng (QML)
+
+Hiệu ứng chỉ để hiển thị, luôn chạy **sau khi** nhận event từ server, không bao giờ đoán trước kết quả.
+
+| Event | Hiệu ứng |
+|---|---|
+| `TURN_START` | Thẻ tàu đang tới lượt sáng viền; đồng hồ chuyển vàng khi còn 10 giây, đỏ khi còn 5 giây |
+| `CHEST_DROP` | Rương rơi xuống góc màn hình, màu theo tier (đồng/bạc/vàng) |
+| `ATTACK` | Tia laze/đạn/tên lửa bay từ tàu bắn sang tàu mục tiêu; tàu mục tiêu rung; thanh giáp rồi thanh HP tụt mượt (`Behavior on value { NumberAnimation }`) |
+| `SHIP_DESTROYED` | Tàu nổ, thẻ tàu chuyển xám |
+| `CHEST_RESULT` | Rương mở, hiện số coin cộng thêm bay lên |
+| `MATCH_END` | Màn kết quả trượt vào |
+
+Nền màn trận là trời sao chuyển động chậm (`ParticleSystem`), theme tối.
 
 ---
 
 ## 4. Thông báo lỗi
 
-`errors.c` đổi mã lỗi thành câu cho người dùng. Ví dụ:
+`Errors` đổi mã lỗi thành câu cho người dùng. Ví dụ:
 
 | Mã | Câu hiển thị |
 |---|---|

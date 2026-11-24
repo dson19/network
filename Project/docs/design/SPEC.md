@@ -1,8 +1,9 @@
 # Đặc tả: Trò chơi "Phi đội không gian"
 
 ## 1. Hệ thống
-- Server và client viết bằng C (C11), giao tiếp qua TCP.
-- Client có giao diện GTK3.
+- Giao tiếp qua TCP. Môn học bắt buộc mọi phần đụng tới socket Linux phải viết bằng C.
+- Server viết bằng C (C11).
+- Client viết bằng C++17 + Qt 5.12 Quick (QML); riêng tầng socket của client (`net.c`) viết bằng C11.
 - Server chạy nhiều trận cùng lúc, theo mô hình 1 luồng chính dùng epoll + thread pool cho việc chậm. Message dạng JSON, mỗi message 1 dòng. Chi tiết và lý do chọn: xem [PROTOCOL.md](PROTOCOL.md).
 - Dùng SQLite ngay từ đầu. Toàn bộ SQL nằm trong lớp `storage` (`storage.h`/`storage.c`); phần còn lại của server chỉ gọi hàm như `storage_user_create()`, không bao giờ viết SQL trực tiếp.
 - Phân loại dữ liệu:
@@ -30,7 +31,7 @@ Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
 | Xem log | ✅ | ❌ | ❌ | ❌ |
 | Quản lý câu hỏi | ✅ | ❌ | ❌ | ❌ |
 
-- **Admin không can thiệp được vào đội đang trong trận.** Khi đội đang trong trận, xóa đội và kick bị khóa với tất cả mọi người, kể cả admin.
+- **Admin không can thiệp được vào đội đang ở sảnh chờ hoặc trong trận.** Khi đó xóa đội và kick bị khóa với tất cả mọi người, kể cả admin.
 - Khóa tài khoản của người đang trong trận: người đó bị đăng xuất ngay và tàu của họ tính là bị hạ (HP = 0). Nếu đó là tàu cuối cùng còn sống của đội thì đội đó thua.
 
 ## 3. Đội
@@ -47,7 +48,7 @@ Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
 - Vào đội có 2 cách, cả hai đều phải được duyệt:
   - Người chơi xin vào đội, đội trưởng duyệt.
   - Đội trưởng mời, người được mời chấp nhận.
-- Mỗi đội chỉ ở 1 trận tại một thời điểm. Khi đội đang trong trận thì khóa các thao tác: rời đội, mời, xin vào, kick, xóa đội.
+- Mỗi đội chỉ ở 1 trận tại một thời điểm. Khi đội đang ở sảnh chờ hoặc trong trận thì khóa các thao tác: rời đội, mời, xin vào, kick, xóa đội (kể cả với admin).
 
 ## 4. Thách đấu và sảnh chờ
 - Đội trưởng gửi lời thách đấu, đội trưởng đội kia chấp nhận. Chỉ thách đấu được giữa 2 đội có số người bằng nhau.
@@ -133,6 +134,7 @@ Các mức: Chưa đăng nhập, Thành viên, Đội trưởng, Admin.
 
 ## 11. Kết thúc trận
 - Đội nào bị hạ hết tàu trước thì thua.
+- Cả đội offline liên tục 120 giây trong trận thì đội đó thua do bỏ cuộc.
 - Kết quả trận được ghi vào log.
 
 ## 12. Barem điểm

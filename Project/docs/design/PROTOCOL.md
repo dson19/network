@@ -10,11 +10,12 @@ Tài liệu này đi kèm [SPEC.md](SPEC.md) (luật chơi) và [DESIGN.md](DESI
 
 **Mô hình:**
 - **Luồng chính** chạy vòng lặp `epoll_wait()`. Luồng này nhận và gửi trên mọi socket, và là luồng **duy nhất** được đọc/sửa state: phiên đăng nhập, đội, lời mời, sảnh chờ, trận đấu, đồng hồ.
-- **Thread pool** gồm N luồng, chỉ làm các việc chậm hoặc có thể bị chặn:
+- **Thread pool** gồm 2 luồng (mặc định, đổi bằng `read_workers` trong `server.conf`), chỉ làm các việc chậm cần trả kết quả về:
   - hash và kiểm tra mật khẩu,
-  - đọc/ghi SQLite,
-  - ghi log ra file.
-- Luồng chính đẩy việc vào hàng đợi việc (có mutex). Pool làm xong thì đẩy kết quả vào hàng đợi kết quả, rồi đánh thức luồng chính qua một `eventfd` đã được đăng ký vào epoll.
+  - đọc SQLite,
+  - đọc file log (cho `ADMIN_LOG`).
+- **1 luồng DB writer** làm mọi việc ghi: ghi SQLite và ghi log ra file, theo đúng thứ tự FIFO. Chỉ có 1 luồng ghi nên thứ tự ghi xuống đĩa luôn giống thứ tự thay đổi trong RAM (DATABASE.md mục 2.1).
+- Luồng chính đẩy việc vào hàng đợi (có mutex). Pool hoặc DB writer làm xong thì đẩy kết quả vào hàng đợi kết quả, rồi đánh thức luồng chính qua một `eventfd` đã được đăng ký vào epoll.
 - Đồng hồ lượt và đồng hồ rương **không dùng `sleep` hay luồng riêng**. Luồng chính giữ danh sách các mốc hết hạn và lấy mốc gần nhất làm timeout của `epoll_wait()`.
 - Mọi socket để ở chế độ non-blocking. Mỗi kết nối có buffer nhận và buffer gửi riêng. Socket chưa gửi được hết thì đăng ký thêm `EPOLLOUT` để gửi nốt phần còn lại.
 
@@ -28,7 +29,7 @@ Tài liệu này đi kèm [SPEC.md](SPEC.md) (luật chơi) và [DESIGN.md](DESI
 | Đồng hồ lượt/rương | Lấy làm timeout của epoll, không cần luồng thêm | Cần thêm luồng chạy timer, lại phải đồng bộ | Lấy làm timeout của poll |
 
 - Game theo lượt nên mỗi người chơi chỉ gửi vài lệnh mỗi phút, và mỗi lệnh xử lý mất vài micro giây. Một luồng chính dư sức phục vụ rất nhiều trận chạy cùng lúc. Các trận chạy **xen kẽ** nhau: xử lý trọn vẹn một lệnh rồi mới tới lệnh tiếp theo.
-- Mutex chỉ còn ở đúng một chỗ là 2 hàng đợi giữa luồng chính và pool, nên dễ kiểm soát.
+- Mutex chỉ còn ở các hàng đợi giữa luồng chính với pool và DB writer, nên dễ kiểm soát.
 - **Đường mở rộng sau này:** các trận độc lập với nhau, nên có thể chia trận ra nhiều luồng, mỗi luồng có epoll riêng. Để chuẩn bị cho việc này, game logic được viết dạng hàm thuần, chỉ nhận vào `Match *` và không dùng biến toàn cục.
 
 ### 1.2. Định dạng message: JSON (thư viện cJSON)
@@ -55,19 +56,20 @@ Tài liệu này đi kèm [SPEC.md](SPEC.md) (luật chơi) và [DESIGN.md](DESI
 - Toàn bộ trạng thái (snapshot) cho client biết **trạng thái hiện tại đúng là gì**, để vẽ lại giao diện. Client không bao giờ tự tính toán HP hay đạn, nên không thể bị lệch dữ liệu so với server.
 - Một trận có tối đa 6 tàu, snapshot chỉ khoảng 1–2 KB, gửi lại mỗi khi có thay đổi vẫn rất rẻ.
 
-### 1.5. Client: gắn socket vào main loop của GTK
+### 1.5. Client: C++ + Qt Quick (QML), socket bằng C gắn vào vòng lặp sự kiện của Qt
 
 **Lý do chọn:**
-- Dùng `g_io_add_watch()` để GTK gọi callback mỗi khi socket có dữ liệu. Toàn bộ client chạy trên **1 luồng**.
-- GTK không an toàn khi gọi từ nhiều luồng. Có luồng mạng riêng thì phải chuyển mọi cập nhật giao diện về luồng UI qua `g_idle_add`, dễ sinh lỗi.
+- Môn học chỉ bắt buộc phần socket Linux viết bằng C. Tầng socket của client (`net.c`) vì vậy viết bằng C11; phần còn lại viết bằng C++ để biên dịch chung `net.c` trực tiếp, không cần lớp cầu nối như JNI hay `ctypes`.
+- QML làm hiệu ứng (HP tụt, bắn, nổ, mở rương, đếm ngược) bằng vài dòng khai báo, nên demo đẹp mà tốn ít công. Ubuntu 20.04 có sẵn Qt 5.12 qua apt.
+- `QSocketNotifier` gắn `fd` của `net.c` vào vòng lặp sự kiện của Qt, nên toàn bộ client chạy trên **1 luồng**. Không có luồng mạng riêng thì không phải chuyển cập nhật giao diện giữa các luồng, tránh được lỗi đồng bộ.
 
 ### 1.6. Lưu trữ: SQLite, qua một lớp `storage`
 
 **Lý do chọn:**
 - Chỉ server truy cập DB, client không bao giờ đụng vào. Vì vậy không cần một DB server riêng cho nhiều máy kết nối tới.
-- Vẫn là SQL đầy đủ: bảng, JOIN, transaction, foreign key.
+- Vẫn là SQL đầy đủ: bảng, ràng buộc `UNIQUE`/`CHECK`, transaction.
 - Cả DB chỉ là 1 file, chỉ cần `libsqlite3-dev`, không phải cài và chạy server DB lúc nộp hay chấm bài.
-- Mở ở chế độ WAL để việc đọc không bị chặn bởi việc ghi. Mọi truy vấn chạy trên thread pool, không chạy trên luồng chính.
+- Mở ở chế độ WAL để việc đọc không bị chặn bởi việc ghi. Đọc chạy trên thread pool, ghi chạy trên luồng DB writer, không truy vấn nào chạy trên luồng chính.
 - Dùng SQLite **ngay từ đầu**, không làm bản RAM tạm: SQLite đủ nhẹ để thêm vào từ ngày đầu, tránh viết code bỏ đi, và lỗi SQL/ràng buộc/transaction lộ ra sớm thay vì dồn tới cuối.
 - Toàn bộ SQL gom vào lớp `storage.h`/`storage.c`. Game logic chỉ gọi hàm như `storage_user_create()`, không viết SQL trực tiếp.
 - Chỉ dữ liệu cần tồn tại lâu dài (tài khoản, role, câu hỏi) mới vào DB. Đội, trạng thái trận, phiên, lời mời giữ trong RAM. Không lưu lịch sử trận. Bảng phân loại đầy đủ ở SPEC.md mục 1.
@@ -78,8 +80,8 @@ Sơ đồ: [architecture.md](diagrams/architecture.md)
 
 | Thành phần | Chạy ở | Trách nhiệm |
 |---|---|---|
-| **Giao diện GTK** | Client | Hiển thị màn hình. Bật/tắt nút theo trạng thái client. Không tự tính luật chơi |
-| **Net module** | Client | Kết nối, tách dòng, quản lý request duy nhất đang chờ response, gửi PING, tự kết nối lại |
+| **Giao diện QML** | Client | Hiển thị màn hình và hiệu ứng. Bật/tắt nút theo trạng thái client. Không tự tính luật chơi |
+| **Net module** | Client | `net.c` (C): socket, gửi, nhận, tách dòng. `NetClient` (C++): JSON, quản lý request duy nhất đang chờ response, gửi PING, tự kết nối lại |
 | **Client state** | Client | Lưu snapshot mới nhất server gửi xuống. Là nguồn dữ liệu duy nhất để vẽ giao diện |
 | **Event loop** | Server, luồng chính | `epoll_wait` trên mọi socket, `eventfd` của pool và socket lắng nghe. Timeout lấy từ Timer |
 | **Connection** | Server, luồng chính | Mỗi kết nối 1 struct: socket non-blocking, buffer nhận, buffer gửi, thời điểm nhận dữ liệu gần nhất |
@@ -89,7 +91,8 @@ Sơ đồ: [architecture.md](diagrams/architecture.md)
 | **Challenge và Lobby** | Server, luồng chính | Lời thách đấu, sảnh chờ, setting, sẵn sàng, bắt đầu |
 | **Match engine** | Server, luồng chính | Lượt, rương, mua bán, tấn công, kết thúc trận. Hàm thuần nhận `Match *` |
 | **Timer** | Server, luồng chính | Hàng đợi ưu tiên các mốc hết hạn: lượt, rương, idle, bỏ cuộc |
-| **Worker** | Server, thread pool | Việc chậm: PBKDF2, truy vấn SQLite, ghi log. **Không bao giờ đụng vào state game** |
+| **Worker** | Server, thread pool | Việc chậm: PBKDF2, đọc SQLite, đọc file log. **Không bao giờ đụng vào state game** |
+| **DB writer** | Server, 1 luồng riêng | Ghi SQLite và ghi log theo FIFO. **Không bao giờ đụng vào state game** |
 | **SQLite** | Server | Tài khoản, role, câu hỏi. Chế độ WAL |
 | **File log** | Server | Ghi nối thêm mọi hoạt động |
 
@@ -270,6 +273,28 @@ Quy định:
 - **Giữ kết nối:** client gửi `PING` mỗi 20 giây. Server đóng kết nối nếu 60 giây không nhận được byte nào.
 - `state` có các giá trị: `IDLE`, `LOBBY`, `IN_MATCH`.
 - `LOGOUT` khi đang trong trận: tàu của người đó tính là bị disconnect, nên bị bỏ qua lượt (xem mục 6).
+- `LOGIN` hoặc `REGISTER` trên kết nối đang đăng nhập: trả `3002`.
+- `LOGIN` với tên không tồn tại, **tên sai định dạng** hoặc sai mật khẩu: đều trả `3003`, để không lộ tên nào có tồn tại. `3004` chỉ trả khi mật khẩu đúng.
+- `CHANGE_PASSWORD` với mật khẩu cũ sai: trả `3003` (`msg: "Wrong password"`). Đổi thành công thì phiên hiện tại giữ nguyên.
+
+`msg` của các mã dùng trong nhóm lệnh này:
+
+| Mã | `msg` |
+|---|---|
+| 1000 | `OK` |
+| 2001 | `Bad format` |
+| 2002 | `Unknown command` |
+| 2003 | `Bad parameter` |
+| 2004 | `Message too long` |
+| 3001 | `Not logged in` |
+| 3002 | `Already logged in` |
+| 3003 | `Wrong username or password` (`LOGIN`), `Wrong password` (`CHANGE_PASSWORD`) |
+| 3004 | `Account locked` |
+| 3005 | `Username taken` |
+| 3006 | `Invalid username` |
+| 3007 | `Invalid password` |
+| 9001 | `Server is read-only` |
+| 9002 | `Server busy` |
 
 ### 4.3. Đội
 | Lệnh | Quyền | Tham số | `data` trả về |
@@ -406,7 +431,7 @@ Quy định:
 | `CHALLENGE_RESULT` | Đội trưởng đội gửi thách đấu | `{"team_id", "accepted"}` |
 | `CHALLENGE_CANCELLED` | Đội trưởng đội bị thách đấu | `{"team_id"}` |
 | `LOBBY_UPDATE` | Mọi người trong sảnh chờ | `{"lobby_id", "host", "guest", "settings", "guest_ready"}` |
-| `LOBBY_CLOSED` | Mọi người trong sảnh chờ | `{"reason"}` |
+| `LOBBY_CLOSED` | Mọi người trong sảnh chờ | `{"reason"}` (`"LEFT"` khi một đội trưởng gửi `LOBBY_LEAVE`, `"DISCONNECTED"` khi có thành viên mất kết nối) |
 
 ### 5.4. Trong trận
 Mọi event trong trận đều kèm trường `state`, là snapshot mới nhất (xem mục 7), **trừ** `CHEST_QUESTION` và `CHEST_DROP`.
@@ -418,15 +443,15 @@ Mọi event trong trận đều kèm trường `state`, là snapshot mới nhấ
 | `TURN_START` | Mọi người trong trận | `{"player", "deadline_ms", "state"}` |
 | `CHEST_DROP` | Mọi người trong trận | `{"player", "tier"}` |
 | `CHEST_QUESTION` | Người đang tới lượt và **đồng đội** | `{"tier", "question", "choices", "deadline_ms", "can_answer"}` |
-| `CHEST_RESULT` | Đội của người đang tới lượt | `{"correct", "answer", "coin", "state"}` (khi trả lời sai hoặc hết giờ thì `answer` là đáp án đúng) |
+| `CHEST_RESULT` | Đội của người đang tới lượt: bản đầy đủ. Đối phương: bản rút gọn | Bản đầy đủ: `{"correct", "answer", "coin", "state"}` (khi trả lời sai hoặc hết giờ thì `answer` là đáp án đúng). Bản rút gọn: `{"correct", "coin"}` |
 | `PURCHASE` | Mọi người trong trận | `{"player", "item", "qty", "state"}` |
 | `REPAIR` | Mọi người trong trận | `{"player", "hp", "state"}` |
 | `RELOAD` | Mọi người trong trận | `{"player", "weapon", "index", "state"}` |
 | `ATTACK` | Mọi người trong trận | `{"attacker", "target", "gun", "missiles", "damage", "armor_lost", "hp_lost", "destroyed", "state"}` |
-| `TURN_SKIPPED` | Mọi người trong trận | `{"player", "reason"}` (`reason` là `"TIMEOUT"` hoặc `"DISCONNECTED"`) |
-| `PLAYER_DISCONNECTED` | Mọi người trong trận | `{"player"}` |
-| `PLAYER_RECONNECTED` | Mọi người trong trận | `{"player"}` |
-| `SHIP_DESTROYED` | Mọi người trong trận | `{"player", "reason"}` (`reason` là `"ATTACK"` hoặc `"LOCKED"`) |
+| `TURN_SKIPPED` | Mọi người trong trận | `{"player", "reason", "state"}` (`reason` là `"TIMEOUT"` hoặc `"DISCONNECTED"`) |
+| `PLAYER_DISCONNECTED` | Mọi người trong trận | `{"player", "state"}` |
+| `PLAYER_RECONNECTED` | Mọi người trong trận | `{"player", "state"}` |
+| `SHIP_DESTROYED` | Mọi người trong trận | `{"player", "reason", "state"}` (`reason` là `"ATTACK"` hoặc `"LOCKED"`) |
 | `MATCH_END` | Mọi người trong trận | `{"winner_team_id", "loser_team_id", "reason", "turns", "stats", "state"}` (`reason` là `"ELIMINATED"` hoặc `"FORFEIT"`; `stats` là mảng `{"username", "team_id", "survived", "damage_dealt"}`) |
 
 - **`can_answer`:** `true` với người đang tới lượt, `false` với đồng đội (chỉ được xem).
@@ -595,5 +620,5 @@ S: {"type":"evt","evt":"TURN_START","data":{"player":"minh",...}}
 ### 9.7. Bảo vệ server
 27. Mỗi kết nối có giới hạn buffer gửi là 256 KB. Client đọc quá chậm làm buffer đầy thì server đóng kết nối đó, để một client chậm không làm tốn bộ nhớ của server.
 28. Mật khẩu được lưu dạng PBKDF2-SHA256 có salt riêng, và **không bao giờ được ghi vào log**.
-29. Việc chậm (hash mật khẩu, SQLite, ghi log) chỉ chạy trên thread pool. Luồng chính không bao giờ gọi hàm có thể bị chặn.
+29. Việc chậm chỉ chạy ngoài luồng chính: hash mật khẩu và đọc DB trên thread pool, ghi DB và ghi log trên luồng DB writer. Luồng chính không bao giờ gọi hàm có thể bị chặn.
 30. Hàng đợi việc của thread pool đầy thì server trả `9002 SERVER_BUSY`, thay vì để hàng đợi tăng mãi.

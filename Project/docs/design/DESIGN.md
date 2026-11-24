@@ -23,9 +23,10 @@ Quy ước:
 
 Sơ đồ: [architecture.md](diagrams/architecture.md)
 
-- **Client** (GTK3, 1 luồng): Giao diện, Net module, Client state.
+- **Client** (C++ + Qt/QML, socket bằng C, 1 luồng): Giao diện QML, Net module, Client state.
 - **Server, luồng chính** (epoll): Event loop, Connection, Dispatcher, Session manager, Team manager, Challenge và Lobby, Match engine, Timer.
-- **Server, thread pool**: các Worker làm việc chậm (PBKDF2, SQLite, ghi log).
+- **Server, thread pool**: các Worker làm việc chậm (PBKDF2, đọc SQLite, đọc file log).
+- **Server, DB writer**: 1 luồng ghi SQLite và ghi log theo FIFO.
 - **Lưu trữ**: SQLite và file log.
 
 Trách nhiệm chi tiết của từng thành phần xem PROTOCOL.md mục 1.7.
@@ -51,9 +52,9 @@ Sơ đồ: [sequence/01-login.md](diagrams/sequence/01-login.md)
 5. Luồng chính xử lý tiếp:
    - Nếu tài khoản đang có phiên ở kết nối khác thì thay thế phiên đó (xem 5.2).
    - Tạo phiên mới, đánh dấu tài khoản online.
-6. Server trả response `1000`, trong đó `data.state` cho biết người chơi đang ở `IDLE`, `LOBBY` hay `IN_MATCH`.
-7. Nếu `state` là `IN_MATCH` thì server gửi thêm `MATCH_RESUME` (xem 5.1).
-8. Server đẩy job ghi log sang pool.
+6. Server trả response `1000` với `data` gồm `username`, `role`, `team_id`.
+7. Nếu tài khoản đang có trận dở thì server gửi thêm event `MATCH_RESUME` ngay sau response (xem 5.1). Client dựa vào event này để vào thẳng màn trận, không cần trường `state` trong response.
+8. Server đẩy dòng log vào hàng đợi của DB writer.
 
 ### 2.2. Xin vào đội và được duyệt
 
@@ -142,7 +143,7 @@ Sơ đồ: [sequence/05-match-end.md](diagrams/sequence/05-match-end.md)
 1. Server gửi `SHIP_DESTROYED` cho tàu vừa bị hạ.
 2. Server gửi `MATCH_END` với `reason` là `ELIMINATED` (bị hạ hết tàu) hoặc `FORFEIT` (bỏ cuộc).
 3. Server hủy trận và mọi đồng hồ của trận đó, rồi chuyển 2 đội về room (`IDLE`). Thành viên vẫn còn offline bị tự rời đội, đồng đội nhận `TEAM_UPDATE`.
-4. Server đẩy job ghi kết quả trận vào log. Kết quả trận không lưu vào DB.
+4. Server đẩy dòng log kết quả trận vào hàng đợi của DB writer. Kết quả trận không lưu vào DB.
 
 ---
 
@@ -170,7 +171,7 @@ Sơ đồ: [sequence/11-error-format.md](diagrams/sequence/11-error-format.md)
 
 | Tình huống | Mã | Kết nối |
 |---|---|---|
-| Dòng nhận được không phải JSON hợp lệ | `2001` (`id: null`) | Giữ nguyên |
+| Dòng nhận được không phải JSON hợp lệ | `2001` | Giữ nguyên |
 | Lệnh không tồn tại | `2002` | Giữ nguyên |
 | Chưa đăng nhập mà gửi lệnh cần đăng nhập | `3001` | Giữ nguyên |
 | Message dài quá 8192 byte | `2004` | **Đóng**, vì không còn xác định được message tiếp theo bắt đầu ở đâu |
@@ -261,7 +262,7 @@ Sơ đồ: [sequence/30-reconnect-in-match.md](diagrams/sequence/30-reconnect-in
 5. Kết nối được thì client tự gửi `LOGIN`, dùng mật khẩu đang giữ trong bộ nhớ (không ghi ra đĩa).
 
 **Khi vào lại:**
-6. Server trả `1000` với `state: IN_MATCH`, rồi gửi `MATCH_RESUME` kèm snapshot.
+6. Server trả `1000`, rồi gửi `MATCH_RESUME` kèm snapshot.
 7. Server gửi `PLAYER_RECONNECTED` cho những người còn lại.
 8. Client vẽ lại màn hình trận từ snapshot.
 

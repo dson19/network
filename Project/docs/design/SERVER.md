@@ -16,12 +16,12 @@ Project/
 ├── server.conf              cấu hình mặc định
 ├── data/
 │   └── questions.txt        câu hỏi soạn sẵn
-├── common/                  dùng chung cho server, client và test
+├── src/common/              dùng chung cho server, client và test
 │   ├── cJSON.c, cJSON.h     thư viện JSON (MIT), nhúng nguyên file
 │   ├── protocol.h           tên lệnh, tên event, mã kết quả, giới hạn
 │   ├── linebuf.c/.h         tách dòng từ luồng byte TCP
 │   └── msg.c/.h             tạo và đọc request/response/event
-├── server/
+├── src/TCP_Server/          (tên khác ./server để không trùng file chạy)
 │   ├── main.c               đọc tham số dòng lệnh, cấu hình, khởi động
 │   ├── config.c/.h          đọc server.conf
 │   ├── loop.c/.h            vòng lặp epoll, accept, đọc, ghi
@@ -40,8 +40,8 @@ Project/
 │   ├── auth.c/.h            PBKDF2, salt, so sánh hash thời gian hằng
 │   ├── rng.c/.h             số ngẫu nhiên có seed (để test lặp lại được)
 │   └── log.c/.h             ghi log qua pool
-├── client/                  xem CLIENT.md
-├── tests/                   xem TESTING.md
+├── src/TCP_Client/          xem CLIENT.md
+├── tests/                   unit test, integration test, load test
 └── docs/design/
 ```
 
@@ -184,13 +184,12 @@ send_buffer_max   = 262144     # 256 KB
 idle_timeout_s    = 60
 
 # --- Thread pool ---
-read_workers      = 4          # luồng đọc DB + hash mật khẩu
+read_workers      = 2          # luồng đọc DB + hash mật khẩu
 job_queue_max     = 10000      # vượt quá thì trả 9002 SERVER_BUSY
 
 # --- Lưu trữ ---
 db_path           = data/game.db
 log_path          = logs/server.log
-log_level         = INFO       # DEBUG, INFO, WARN, ERROR
 question_seed     = data/questions.txt
 
 # --- Bảo mật ---
@@ -214,7 +213,7 @@ rng_seed          = 0          # 0 = ngẫu nhiên theo thời gian; khác 0 = l
 
 - **Đọc cấu hình ở đâu:** mặc định là `server.conf` trong thư mục hiện tại. Đổi bằng `./server -c <file>`.
 - **Giá trị không hợp lệ** (sai kiểu, ngoài khoảng, `min > max`): báo lỗi kèm số dòng rồi thoát, **không** tự đoán giá trị.
-- **`rng_seed` và các khóa `min_*`:** tồn tại để test chạy nhanh và lặp lại được. Ví dụ file cấu hình cho test đặt `min_turn_time_s = 1` và `rng_seed = 42` (xem TESTING.md).
+- **`rng_seed` và các khóa `min_*`:** tồn tại để test chạy nhanh và lặp lại được. Ví dụ file cấu hình cho test đặt `min_turn_time_s = 1` và `rng_seed = 42`.
 
 ### Tham số dòng lệnh
 
@@ -232,48 +231,47 @@ rng_seed          = 0          # 0 = ngẫu nhiên theo thời gian; khác 0 = l
 
 ### 5.1. Định dạng
 
-Mỗi sự kiện là **1 dòng**, gồm các trường ngăn cách bằng dấu cách:
+Giữ cùng kiểu log với các bài tập (HW4): mỗi bản ghi là **1 dòng**, các trường ngăn cách bằng dấu `$`. Có 2 dạng dòng:
 
 ```
-<thời gian ISO-8601 có mili giây và múi giờ> <MỨC> <NHÓM> <SỰ_KIỆN> khóa=giá_trị ...
+[dd/mm/yyyy hh:mm:ss]$<ip:port>$<username>$<request>$<code> <msg>     (1 request của client)
+[dd/mm/yyyy hh:mm:ss]$<nguồn>$<nội dung>                              (việc không do request gây ra)
 ```
 
 ```
-2026-11-17T10:22:31.123+07:00 INFO  NET   CONNECT     conn=12 peer=192.168.1.5:51234
-2026-11-17T10:22:31.402+07:00 INFO  AUTH  LOGIN_OK    conn=12 user=son
-2026-11-17T10:22:35.010+07:00 WARN  AUTH  LOGIN_FAIL  conn=13 user=son code=3003
-2026-11-17T10:23:02.551+07:00 INFO  TEAM  CREATE      user=son team=5 name="Rong Bay"
-2026-11-17T10:25:40.000+07:00 INFO  MATCH START       match=3 team_a=5 team_b=8 size=2
-2026-11-17T10:26:10.777+07:00 INFO  MATCH ATTACK      match=3 from=son to=minh gun=LASER:2 missiles=1 damage=1000 hp_lost=500
-2026-11-17T10:26:41.000+07:00 INFO  MATCH TURN_SKIP   match=3 user=lan reason=TIMEOUT
-2026-11-17T10:40:12.300+07:00 INFO  MATCH END         match=3 winner=5 reason=ELIMINATED turns=41
-2026-11-17T10:41:00.000+07:00 INFO  ADMIN LOCK        by=admin user=hacker locked=1
+[17/11/2026 10:22:31]$192.168.1.5:51234$CONNECT
+[17/11/2026 10:22:31]$192.168.1.5:51234$-${"cmd":"LOGIN","username":"son","password":"***"}$1000 OK
+[17/11/2026 10:22:35]$192.168.1.7:40112$-${"cmd":"LOGIN","username":"son","password":"***"}$3003 Wrong username or password
+[17/11/2026 10:23:02]$192.168.1.5:51234$son${"cmd":"TEAM_CREATE","name":"Rong Bay"}$1000 OK
+[17/11/2026 10:25:40]$192.168.1.5:51234$son${"cmd":"LOBBY_START"}$1000 OK
+[17/11/2026 10:26:10]$192.168.1.5:51234$son${"cmd":"ATTACK","target":"minh","gun":{"type":"LASER","count":2},"missiles":1}$1000 OK
+[17/11/2026 10:26:41]$SERVER$TURN_SKIPPED match=3 player=lan reason=TIMEOUT
+[17/11/2026 10:40:12]$SERVER$MATCH_END match=3 winner=5 loser=8 reason=ELIMINATED turns=41
+[17/11/2026 10:41:00]$192.168.1.9:52001$admin${"cmd":"ADMIN_LOCK","username":"hacker","locked":true}$1000 OK
+[17/11/2026 10:41:30]$192.168.1.5:51234$DISCONNECT idle
 ```
 
-- **Mức:** `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`.
-- **Nhóm:** `NET`, `AUTH`, `TEAM`, `LOBBY`, `MATCH`, `CHEST`, `ADMIN`, `DB`, `SYS`.
-- Giá trị có dấu cách hoặc dấu `"` thì được bọc trong `"..."` và escape theo kiểu JSON. Nhờ vậy mỗi dòng log tách lại được bằng máy.
-- **Không bao giờ ghi mật khẩu**, kể cả mật khẩu sai, và không ghi `pass_hash`.
+- **Thời gian:** `dd/mm/yyyy hh:mm:ss`, cố định múi giờ Việt Nam (`Asia/Ho_Chi_Minh`) như HW1, không phụ thuộc cấu hình máy chạy server.
+- **`username`:** tài khoản đang gắn với kết nối, `-` nếu chưa đăng nhập. Đây là trường duy nhất thêm so với HW4, để admin lọc log theo người chơi.
+- **`request`:** nguyên dòng JSON nhận được (không kèm `\r\n`). **`<code> <msg>`:** mã và `msg` của response, không ghi `data`.
+- **`nguồn`:** `ip:port` với các việc của kết nối (`CONNECT`, `DISCONNECT <lý do>`), hoặc `SERVER` với việc do server tự làm (đồng hồ, kết thúc trận, lỗi DB, khởi động/tắt).
+- **Làm sạch** như HW4: byte CR, LF ghi thành 2 ký tự `\r`, `\n`; ký tự điều khiển khác và dấu `$` trong nội dung đổi thành `?`, để mỗi bản ghi luôn đúng 1 dòng và tách lại được theo `$`. Ký tự UTF-8 (tiếng Việt) giữ nguyên.
+- **Không bao giờ ghi mật khẩu:** giá trị của `password`, `old_password`, `new_password` được thay bằng `"***"` trước khi ghi. Không ghi `pass_hash`, `salt`.
 
 ### 5.2. Những gì phải ghi
 
-| Nhóm | Sự kiện |
+| Nguồn | Ghi gì |
 |---|---|
-| `NET` | Kết nối, ngắt kết nối (kèm lý do), message quá dài, JSON hỏng |
-| `AUTH` | Đăng ký, đăng nhập thành công/thất bại, đăng xuất, đổi mật khẩu, thay thế phiên |
-| `TEAM` | Tạo, xóa, xin vào, mời, duyệt/từ chối, rời, kick, chuyển đội trưởng |
-| `LOBBY` | Gửi/chấp nhận/từ chối/hủy thách đấu, đổi setting, sẵn sàng, bắt đầu, đóng sảnh |
-| `MATCH` | Bắt đầu trận, mua, sửa, reload, tấn công, bỏ lượt, tàu bị hạ, mất/có lại kết nối, kết thúc |
-| `CHEST` | Thả rương, mở, trả lời (đúng/sai/hết giờ). Ghi `question_id` chứ không ghi đáp án |
-| `ADMIN` | Mọi lệnh admin, ghi rõ ai làm và làm với ai |
-| `DB` | Lỗi ghi, thử lại, chuyển chế độ chỉ đọc |
-| `SYS` | Khởi động, tắt, đọc cấu hình, nạp câu hỏi |
+| Request của client | Mọi request kèm mã kết quả, cả thành công lẫn thất bại. Riêng `PING` không ghi vì client gửi định kỳ mỗi 20 giây |
+| Kết nối | `CONNECT`; `DISCONNECT` kèm lý do (`closed`, `idle`, `too_long`, `replaced`, `locked`, `send_buffer_full`) |
+| `SERVER`, trong trận | `MATCH_START`, `TURN_SKIPPED`, `CHEST_RESULT` khi hết giờ rương (ghi `question_id`, không ghi đáp án), `SHIP_DESTROYED`, `MATCH_END`, `MATCH_ABORTED` |
+| `SERVER`, hệ thống | Khởi động, tắt, nạp câu hỏi (kể cả khối câu hỏi sai định dạng), lỗi ghi DB, chuyển chế độ chỉ đọc |
 
 ### 5.3. Cách ghi
 
 - Luồng chính chỉ định dạng dòng log rồi đẩy vào hàng đợi log. Việc ghi ra file nằm ở **luồng DB writer**, nên luồng chính không bao giờ chờ ổ đĩa.
 - File mở ở chế độ append. Mỗi dòng được ghi bằng 1 lần `write()`.
-- `ADMIN_LOG` đọc ngược từ cuối file để lấy `limit` dòng mới nhất. Việc đọc chạy trên pool.
+- `ADMIN_LOG` đọc file từ đầu, bỏ qua `offset` dòng rồi lấy tối đa `limit` dòng, tức thứ tự từ cũ đến mới như PROTOCOL.md mục 4.7. Việc đọc chạy trên pool.
 
 ---
 
@@ -285,7 +283,7 @@ Mỗi sự kiện là **1 dòng**, gồm các trường ngăn cách bằng dấu
 |---|---|---|
 | SQLite 3.31 | `libsqlite3-dev` | Database |
 | OpenSSL 1.1.1 | `libssl-dev` | `PKCS5_PBKDF2_HMAC` và `RAND_bytes` (salt) |
-| GTK 3.24 | `libgtk-3-dev` | Client |
+| Qt 5.12 (Quick, QML) | `qtbase5-dev`, `qtdeclarative5-dev`, `qml-module-qtquick2`, `qml-module-qtquick-controls2`, `qml-module-qtquick-window2` | Client |
 | pthread | có sẵn trong glibc | Thread pool |
 | cJSON | nhúng sẵn trong `common/` | JSON |
 
@@ -296,7 +294,8 @@ CFLAGS  = -std=c11 -Wall -Wextra -Wpedantic -O2 -D_GNU_SOURCE
 LDLIBS  = -lsqlite3 -lcrypto -lpthread
 ```
 
-- **`-std=c11` là bắt buộc**, vì bài được chấm bằng GCC 9.4 trên Ubuntu 20.04.
+- **`-std=c11` là bắt buộc** cho mọi file C (server, `common/`, `TCP_Client/net.c`), vì bài được chấm bằng GCC 9.4 trên Ubuntu 20.04.
+- **Client:** phần C++ build bằng `qmake` với `CONFIG += c++17`; `net.c` và `common/linebuf.c` được thêm vào `client.pro` và vẫn biên dịch bằng `gcc -std=c11`. Makefile gốc gọi `qmake && make` trong `client/`.
 - **`-D_GNU_SOURCE`:** với `-std=c11`, glibc ẩn bớt các hàm POSIX và Linux (`accept4`, `pipe2`, `strdup`, `getline`, ...). `_GNU_SOURCE` bao gồm luôn `_POSIX_C_SOURCE=200809L`.
 - **Bản debug và bản test** thêm `-O0 -g -fsanitize=address,undefined`. Kiểm tra race condition giữa luồng chính và pool dùng `-fsanitize=thread`, chạy bằng GCC trên máy (GCC 9 trong môi trường Ubuntu 20.04 không link được TSan).
 
