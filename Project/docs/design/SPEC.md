@@ -4,7 +4,7 @@
 - Giao tiếp qua TCP. Môn học bắt buộc mọi phần đụng tới socket Linux phải viết bằng C.
 - Server viết bằng C (C11).
 - Client viết bằng C++17 + Qt 5.12 Quick (QML); riêng tầng socket của client (`net.c`) viết bằng C11.
-- Server chạy nhiều trận cùng lúc, theo mô hình 1 luồng chính dùng epoll + thread pool cho việc chậm. Message dạng JSON, mỗi message 1 dòng. Chi tiết và lý do chọn: xem [PROTOCOL.md](PROTOCOL.md).
+- Server chạy nhiều trận cùng lúc, theo mô hình 1 luồng chính dùng `poll` + thread pool cho việc chậm. Message dạng JSON, mỗi message 1 dòng. Chi tiết và lý do chọn: xem [PROTOCOL.md](PROTOCOL.md).
 - Dùng SQLite ngay từ đầu. Toàn bộ SQL nằm trong lớp `storage` (`storage.h`/`storage.c`); phần còn lại của server chỉ gọi hàm như `storage_user_create()`, không bao giờ viết SQL trực tiếp.
 - Phân loại dữ liệu:
 

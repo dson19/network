@@ -14,8 +14,8 @@ flowchart LR
     end
 
     subgraph Server["Server"]
-        subgraph Main["Luồng chính - epoll"]
-            LOOP["Event loop<br/>epoll_wait"]
+        subgraph Main["Luồng chính - poll"]
+            LOOP["Event loop<br/>poll"]
             CONN["Connection<br/>buffer nhận / gửi"]
             DISP["Dispatcher<br/>parse JSON, kiểm tra quyền"]
             SESS["Session manager"]
@@ -35,7 +35,7 @@ flowchart LR
     CNET <-->|"TCP, mỗi dòng 1 JSON"| CONN
     LOOP --> CONN --> DISP
     DISP --> SESS & TEAM & LOBBY & MATCH
-    TIMER -->|"timeout của epoll_wait"| LOOP
+    TIMER -->|"timeout của poll"| LOOP
     DISP -->|"hàng đợi việc"| W
     W -->|"eventfd + hàng đợi kết quả"| LOOP
     W -->|"đọc"| DB

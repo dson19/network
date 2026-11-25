@@ -24,7 +24,7 @@ Project/
 ├── src/TCP_Server/          (tên khác ./server để không trùng file chạy)
 │   ├── main.c               đọc tham số dòng lệnh, cấu hình, khởi động
 │   ├── config.c/.h          đọc server.conf
-│   ├── loop.c/.h            vòng lặp epoll, accept, đọc, ghi
+│   ├── loop.c/.h            vòng lặp poll, accept, đọc, ghi
 │   ├── conn.c/.h            struct Connection, buffer nhận/gửi
 │   ├── dispatch.c/.h        bảng lệnh, kiểm tra quyền theo thứ tự cố định
 │   ├── session.c/.h         phiên đăng nhập, thay thế phiên, online
@@ -162,13 +162,13 @@ typedef struct {
 
 ## 3. Vòng đời một request trên server
 
-1. `epoll_wait` báo socket đọc được. `loop.c` đọc **hết** dữ liệu đang có (socket non-blocking, đọc tới khi `EAGAIN`).
+1. `poll` đặt `POLLIN` cho socket đọc được. `loop.c` đọc **hết** dữ liệu đang có (socket non-blocking, đọc tới khi `EAGAIN`).
 2. `linebuf` tách ra từng dòng hoàn chỉnh. Dòng dài quá 8192 byte thì trả `2004` và đóng kết nối.
 3. Nếu kết nối đang `busy` (chờ pool) thì dừng, để các dòng còn lại trong buffer. Khi pool trả kết quả xong mới xử lý tiếp.
 4. `dispatch.c` parse JSON, tra bảng lệnh, kiểm tra theo thứ tự cố định (PROTOCOL.md mục 9.3), rồi gọi hàm xử lý.
 5. Hàm xử lý sửa state trong RAM, rồi xếp response và event vào buffer gửi của các kết nối liên quan.
 6. Thay đổi cần lưu lâu dài được đẩy vào hàng đợi DB writer. Dòng log được đẩy vào hàng đợi log.
-7. `loop.c` thử gửi ngay. Gửi chưa hết thì bật `EPOLLOUT` để gửi tiếp lần sau.
+7. `loop.c` thử gửi ngay. Gửi chưa hết thì bật `POLLOUT` để gửi tiếp lần sau; gửi hết thì bỏ cờ này.
 
 ---
 

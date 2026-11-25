@@ -105,7 +105,7 @@ Các luật về đội (mỗi người 1 đội, tối đa 3 người, đúng 1
 |---|---|---|
 | **RAM trước, DB sau, 1 luồng ghi** (đã chọn) | Luồng chính không bao giờ chờ DB. Thứ tự ghi luôn đúng | Server sập thì có thể mất vài thay đổi cuối cùng chưa kịp ghi (cỡ mili giây) |
 | DB trước, RAM sau | Không bao giờ mất thay đổi đã báo thành công | Trong lúc chờ DB, phải khóa dữ liệu đang sửa để không ai sửa song song. Phức tạp và chậm hơn nhiều |
-| Không cache, luôn đọc DB | Đơn giản về ý tưởng | Mọi lệnh đều phải chờ pool, làm mất lợi thế của luồng chính epoll |
+| Không cache, luôn đọc DB | Đơn giản về ý tưởng | Mọi lệnh đều phải chờ pool, làm mất lợi thế của luồng chính dùng `poll` |
 
 **Dung lượng RAM:** mỗi user trong cache khoảng 64 byte. 100.000 user tốn khoảng 6 MB, không đáng kể.
 

@@ -6,31 +6,32 @@ Tài liệu này đi kèm [SPEC.md](SPEC.md) (luật chơi) và [DESIGN.md](DESI
 
 ## 1. Các quyết định kiến trúc và lý do chọn
 
-### 1.1. Server: 1 luồng chính dùng epoll + thread pool
+### 1.1. Server: 1 luồng chính dùng poll + thread pool
 
 **Mô hình:**
-- **Luồng chính** chạy vòng lặp `epoll_wait()`. Luồng này nhận và gửi trên mọi socket, và là luồng **duy nhất** được đọc/sửa state: phiên đăng nhập, đội, lời mời, sảnh chờ, trận đấu, đồng hồ.
+- **Luồng chính** chạy vòng lặp `poll()`. Luồng này nhận và gửi trên mọi socket, và là luồng **duy nhất** được đọc/sửa state: phiên đăng nhập, đội, lời mời, sảnh chờ, trận đấu, đồng hồ.
 - **Thread pool** gồm 2 luồng (mặc định, đổi bằng `read_workers` trong `server.conf`), chỉ làm các việc chậm cần trả kết quả về:
   - hash và kiểm tra mật khẩu,
   - đọc SQLite,
   - đọc file log (cho `ADMIN_LOG`).
 - **1 luồng DB writer** làm mọi việc ghi: ghi SQLite và ghi log ra file, theo đúng thứ tự FIFO. Chỉ có 1 luồng ghi nên thứ tự ghi xuống đĩa luôn giống thứ tự thay đổi trong RAM (DATABASE.md mục 2.1).
-- Luồng chính đẩy việc vào hàng đợi (có mutex). Pool hoặc DB writer làm xong thì đẩy kết quả vào hàng đợi kết quả, rồi đánh thức luồng chính qua một `eventfd` đã được đăng ký vào epoll.
-- Đồng hồ lượt và đồng hồ rương **không dùng `sleep` hay luồng riêng**. Luồng chính giữ danh sách các mốc hết hạn và lấy mốc gần nhất làm timeout của `epoll_wait()`.
-- Mọi socket để ở chế độ non-blocking. Mỗi kết nối có buffer nhận và buffer gửi riêng. Socket chưa gửi được hết thì đăng ký thêm `EPOLLOUT` để gửi nốt phần còn lại.
+- Luồng chính đẩy việc vào hàng đợi (có mutex). Pool hoặc DB writer làm xong thì đẩy kết quả vào hàng đợi kết quả, rồi đánh thức luồng chính qua một `eventfd` nằm trong mảng `pollfd`.
+- Đồng hồ lượt và đồng hồ rương **không dùng `sleep` hay luồng riêng**. Luồng chính giữ danh sách các mốc hết hạn và lấy mốc gần nhất làm timeout của `poll()`.
+- Mọi socket để ở chế độ non-blocking. Mỗi kết nối có buffer nhận và buffer gửi riêng. Socket luôn theo dõi `POLLIN`; khi buffer gửi còn dữ liệu thì theo dõi thêm `POLLOUT`, gửi hết thì bỏ cờ này để tránh vòng lặp ăn CPU.
 
 **Lý do chọn:**
 
-| Tiêu chí | epoll + thread pool | Mỗi client 1 luồng (như HW6) | 1 luồng + poll() |
+| Tiêu chí | poll + thread pool (chọn) | Mỗi client 1 luồng (như HW6) | epoll + thread pool |
 |---|---|---|---|
-| Số kết nối | Hàng chục nghìn: epoll chỉ trả về các socket đang có dữ liệu | Mỗi luồng tốn stack và context switch, vài nghìn luồng là nặng | poll() quét toàn bộ danh sách mỗi lần gọi, O(n) |
+| Số kết nối | `poll()` quét toàn bộ danh sách, O(n), nhưng đủ cho quy mô đồ án | Mỗi luồng tốn stack và context switch, vài nghìn luồng là nặng | Phù hợp hơn khi có rất nhiều kết nối vì chỉ trả về các socket sẵn sàng |
 | Race condition trên state game | Không có, vì chỉ luồng chính đụng vào state | Phải khóa mutex khắp nơi, dễ deadlock, bug khó tái hiện | Không có |
-| Việc chậm (hash mật khẩu ~50–100ms, ghi DB) | Đẩy sang pool, luồng chính không bị chặn | Mỗi client tự chịu | Chặn toàn bộ server |
-| Đồng hồ lượt/rương | Lấy làm timeout của epoll, không cần luồng thêm | Cần thêm luồng chạy timer, lại phải đồng bộ | Lấy làm timeout của poll |
+| Việc chậm (hash mật khẩu ~50–100ms, ghi DB) | Đẩy sang pool, luồng chính không bị chặn | Mỗi client tự chịu nhưng state phải đồng bộ | Đẩy sang pool, luồng chính không bị chặn |
+| Đồng hồ lượt/rương | Lấy làm timeout của `poll`, không cần luồng thêm | Cần thêm luồng chạy timer, lại phải đồng bộ | Lấy làm timeout của `epoll_wait` |
+| Độ phức tạp cài đặt | API đơn giản, quản lý bằng mảng `pollfd` | Dễ bắt đầu nhưng khó đồng bộ state | Phải quản lý đăng ký/thay đổi sự kiện bằng `epoll_ctl` |
 
 - Game theo lượt nên mỗi người chơi chỉ gửi vài lệnh mỗi phút, và mỗi lệnh xử lý mất vài micro giây. Một luồng chính dư sức phục vụ rất nhiều trận chạy cùng lúc. Các trận chạy **xen kẽ** nhau: xử lý trọn vẹn một lệnh rồi mới tới lệnh tiếp theo.
 - Mutex chỉ còn ở các hàng đợi giữa luồng chính với pool và DB writer, nên dễ kiểm soát.
-- **Đường mở rộng sau này:** các trận độc lập với nhau, nên có thể chia trận ra nhiều luồng, mỗi luồng có epoll riêng. Để chuẩn bị cho việc này, game logic được viết dạng hàm thuần, chỉ nhận vào `Match *` và không dùng biến toàn cục.
+- Nếu sau này số kết nối tăng lớn, có thể thay lớp event loop bằng `epoll` mà không đổi protocol hay game logic. Game logic được viết dạng hàm thuần, chỉ nhận vào `Match *` và không dùng biến toàn cục.
 
 ### 1.2. Định dạng message: JSON (thư viện cJSON)
 
@@ -83,7 +84,7 @@ Sơ đồ: [architecture.md](diagrams/architecture.md)
 | **Giao diện QML** | Client | Hiển thị màn hình và hiệu ứng. Bật/tắt nút theo trạng thái client. Không tự tính luật chơi |
 | **Net module** | Client | `net.c` (C): socket, gửi, nhận, tách dòng. `NetClient` (C++): JSON, quản lý request duy nhất đang chờ response, gửi PING, tự kết nối lại |
 | **Client state** | Client | Lưu snapshot mới nhất server gửi xuống. Là nguồn dữ liệu duy nhất để vẽ giao diện |
-| **Event loop** | Server, luồng chính | `epoll_wait` trên mọi socket, `eventfd` của pool và socket lắng nghe. Timeout lấy từ Timer |
+| **Event loop** | Server, luồng chính | `poll` trên socket lắng nghe, mọi socket client và `eventfd` của pool. Timeout lấy từ Timer |
 | **Connection** | Server, luồng chính | Mỗi kết nối 1 struct: socket non-blocking, buffer nhận, buffer gửi, thời điểm nhận dữ liệu gần nhất |
 | **Dispatcher** | Server, luồng chính | Tách dòng, parse JSON, kiểm tra quyền theo thứ tự cố định, gọi đúng manager |
 | **Session manager** | Server, luồng chính | Ánh xạ kết nối với tài khoản. Theo dõi ai online. Xử lý thay thế phiên |

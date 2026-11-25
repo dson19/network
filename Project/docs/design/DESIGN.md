@@ -24,7 +24,7 @@ Quy ước:
 Sơ đồ: [architecture.md](diagrams/architecture.md)
 
 - **Client** (C++ + Qt/QML, socket bằng C, 1 luồng): Giao diện QML, Net module, Client state.
-- **Server, luồng chính** (epoll): Event loop, Connection, Dispatcher, Session manager, Team manager, Challenge và Lobby, Match engine, Timer.
+- **Server, luồng chính** (`poll`): Event loop, Connection, Dispatcher, Session manager, Team manager, Challenge và Lobby, Match engine, Timer.
 - **Server, thread pool**: các Worker làm việc chậm (PBKDF2, đọc SQLite, đọc file log).
 - **Server, DB writer**: 1 luồng ghi SQLite và ghi log theo FIFO.
 - **Lưu trữ**: SQLite và file log.
@@ -208,13 +208,13 @@ Sơ đồ: [sequence/13-error-permission.md](diagrams/sequence/13-error-permissi
 
 ## 4. Luồng timeout
 
-Mọi đồng hồ đều nằm trong Timer của luồng chính. Timer lấy mốc hết hạn gần nhất làm timeout cho `epoll_wait`, nên không cần `sleep` hay luồng riêng.
+Mọi đồng hồ đều nằm trong Timer của luồng chính. Timer lấy mốc hết hạn gần nhất làm timeout cho `poll`, nên không cần `sleep` hay luồng riêng.
 
 ### 4.1. Hết giờ lượt
 
 Sơ đồ: [sequence/20-timeout-turn.md](diagrams/sequence/20-timeout-turn.md)
 
-1. `epoll_wait` trả về vì hết timeout. Timer báo lượt hiện tại đã hết hạn.
+1. `poll` trả về 0 vì hết timeout. Timer báo lượt hiện tại đã hết hạn.
 2. Server gửi `MATCH_UPDATE` (`action: TURN_SKIPPED`, `reason: TIMEOUT`) cho cả trận. Rương chưa mở thì biến mất.
 3. Server sang lượt tiếp theo (xem 2.4).
 4. Request đến server **sau** mốc hết hạn thì bị coi là ngoài lượt (`7002`), kể cả khi người dùng đã bấm nút trước mốc đó. Server chỉ căn theo đồng hồ của chính nó.

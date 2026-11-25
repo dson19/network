@@ -11,9 +11,9 @@ sequenceDiagram
 
     S->>A: TURN_START {player:A0, deadline_ms:t+30s}
     S->>B: TURN_START {player:A0, deadline_ms:t+30s}
-    Note over S: epoll_wait timeout = deadline gần nhất
+    Note over S: poll timeout = deadline gần nhất
     Note over A: Không làm gì trong 30 giây
-    S->>S: epoll_wait trả về do timeout, Timer báo hết lượt A0
+    S->>S: poll trả về 0 do timeout, Timer báo hết lượt A0
     S->>A: MATCH_UPDATE {action:TURN_SKIPPED, player:A0, reason:TIMEOUT, state}
     S->>B: MATCH_UPDATE {action:TURN_SKIPPED, player:A0, reason:TIMEOUT, state}
     Note over S: Rương chưa mở thì biến mất
