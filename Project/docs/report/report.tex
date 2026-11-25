@@ -183,7 +183,7 @@ Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server t�
 \cmd{5002} & \cmd{TEAM\_NAME\_TAKEN} & Tên đội đã tồn tại \\
 \cmd{5003} & \cmd{TEAM\_FULL} & Đội đã đủ 3 người \\
 \cmd{5004} & \cmd{ALREADY\_IN\_TEAM} & Người chơi đã ở trong một đội \\
-\cmd{5006} & \cmd{TEAM\_UNAVAILABLE} & Đội đang ở sảnh chờ/trong trận, hoặc hai đội không cùng số người khi thách đấu \\
+\cmd{5006} & \cmd{TEAM\_BUSY} & Đội đang ở sảnh chờ hoặc trong trận \\
 \cmd{5007} & \cmd{USER\_NOT\_FOUND} & Không tìm thấy người chơi \\
 \cmd{5008} & \cmd{NOT\_A\_MEMBER} & Người này không ở trong đội \\
 \cmd{5009} & \cmd{REQUEST\_NOT\_FOUND} & Không có lời xin vào hoặc lời mời tương ứng \\
@@ -191,6 +191,7 @@ Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server t�
 \cmd{5011} & \cmd{USER\_OFFLINE} & Người được mời đang offline \\
 \midrule
 \multicolumn{3}{@{}l}{\textit{Thách đấu, sảnh chờ (6xxx)}} \\
+\cmd{6001} & \cmd{TEAM\_SIZE\_MISMATCH} & Hai đội không cùng số thành viên khi gửi hoặc chấp nhận thách đấu \\
 \cmd{6002} & \cmd{CHALLENGE\_NOT\_FOUND} & Không có lời thách đấu tương ứng \\
 \cmd{6003} & \cmd{SAME\_TEAM} & Không thể thách đấu chính đội mình \\
 \cmd{6004} & \cmd{NOT\_IN\_LOBBY} & Không ở trong sảnh chờ \\
@@ -276,7 +277,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Xóa đội \newline \cmd{TEAM\_DELETE} &
 \{"cmd":~"TEAM\_\allowbreak{}DELETE", "team\_id":~5\} &
-\textit{Chỉ đội trưởng được xóa đội mình.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{4001} đội trưởng xóa đội khác\newline \cmd{5001} không có đội này\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
+\textit{Chỉ đội trưởng được xóa đội mình.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{4001} đội trưởng xóa đội khác\newline \cmd{5001} không có đội này\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận, trường \cmd{msg} nêu rõ trạng thái \\
 \midrule
 
 \normalfont Danh sách đội \newline \cmd{TEAM\_LIST} &
@@ -336,7 +337,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Gửi thách đấu \newline \cmd{CHALLENGE\_SEND} &
 \{"cmd":~"CHALLENGE\_\allowbreak{}SEND", "team\_id":~8\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5001} không có đội này\newline \cmd{6003} thách đấu chính đội mình\newline \cmd{5006} một đội đang bận hoặc hai đội không cùng số người \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5001} không có đội này\newline \cmd{6003} thách đấu chính đội mình\newline \cmd{5006} một trong hai đội đang ở sảnh chờ hoặc trong trận\newline \cmd{6001} hai đội không cùng số thành viên \\
 \midrule
 
 \normalfont Danh sách thách đấu \newline \cmd{CHALLENGE\_LIST} &
@@ -346,7 +347,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Trả lời thách đấu \newline \cmd{CHALLENGE\_REPLY} &
 \{"cmd":~"CHALLENGE\_\allowbreak{}REPLY", "team\_id":~8, "accept":~true\} &
-\textit{Chấp nhận:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"lobby\_id":~3\}\}}\newline \textit{Từ chối:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6002} không có lời thách đấu từ đội này\newline \cmd{5006} một đội không còn rảnh hoặc số người hai đội không còn bằng nhau \\
+\textit{Chấp nhận:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"lobby\_id":~3\}\}}\newline \textit{Từ chối:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6002} không có lời thách đấu từ đội này\newline \cmd{5006} một trong hai đội đang ở sảnh chờ hoặc trong trận\newline \cmd{6001} hai đội không còn cùng số thành viên khi chấp nhận \\
 \midrule
 
 \normalfont Hủy thách đấu \newline \cmd{CHALLENGE\_CANCEL} &
