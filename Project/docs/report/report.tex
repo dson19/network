@@ -214,7 +214,7 @@ Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server t�
 \cmd{7014} & \cmd{NO\_GUN} & Chỗ được chọn chưa lắp pháo \\
 \midrule
 \multicolumn{3}{@{}l}{\textit{Server (9xxx)}} \\
-\cmd{9001} & \cmd{INTERNAL\_ERROR} & Lỗi phía server, hoặc server đang ở chế độ chỉ đọc do lỗi ghi DB \\
+\cmd{9001} & \cmd{INTERNAL\_ERROR} & Lỗi phía server, ví dụ không lưu được thay đổi tài khoản vào file \\
 \cmd{9002} & \cmd{SERVER\_BUSY} & Server quá tải, thử lại sau \\
 \bottomrule
 \caption{Mã kết quả}\label{tab:codes}
@@ -247,7 +247,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Đăng ký \newline \cmd{REGISTER} &
 \{"cmd":~"REGISTER", "username":~"son", "password":~"Abc123"\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu tham số\newline \cmd{3002} kết nối này đang đăng nhập\newline \cmd{3003} username không dài 3--20 ký tự, chứa ký tự ngoài chữ/số/\cmd{\_}, hoặc password không dài 6--64 ký tự\newline \cmd{3005} tên đã tồn tại (không phân biệt hoa thường)\newline \cmd{9001} server đang ở chế độ chỉ đọc do lỗi ghi DB\newline \cmd{9002} hàng đợi thread pool đầy \\
+\textit{Thành công sau khi lưu tài khoản vào file:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu tham số\newline \cmd{3002} kết nối này đang đăng nhập\newline \cmd{3003} username không dài 3--20 ký tự, chứa ký tự ngoài chữ/số/\cmd{\_}, hoặc password không dài 6--64 ký tự\newline \cmd{3005} tên đã tồn tại (không phân biệt hoa thường)\newline \cmd{9001} không lưu được tài khoản vào file\newline \cmd{9002} hàng đợi thread pool đầy \\
 \midrule
 
 \normalfont Đăng nhập \newline \cmd{LOGIN} &
@@ -267,7 +267,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Đổi mật khẩu \newline \cmd{CHANGE\_PASSWORD} &
 \{"cmd":~"CHANGE\_\allowbreak{}PASSWORD", "old\_password":~"Abc123", "new\_password":~"Xyz789"\} &
-\textit{Thành công, phiên giữ nguyên:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu tham số\newline \cmd{3001} chưa đăng nhập\newline \cmd{3003} mật khẩu cũ sai hoặc mật khẩu mới không dài 6--64 ký tự\newline \cmd{9001} server đang ở chế độ chỉ đọc\newline \cmd{9002} hàng đợi thread pool đầy \\
+\textit{Thành công sau khi lưu thay đổi vào file, phiên giữ nguyên:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu tham số\newline \cmd{3001} chưa đăng nhập\newline \cmd{3003} mật khẩu cũ sai hoặc mật khẩu mới không dài 6--64 ký tự\newline \cmd{9001} không lưu được thay đổi vào file\newline \cmd{9002} hàng đợi thread pool đầy \\
 \midrule
 
 \normalfont Tạo đội \newline \cmd{TEAM\_CREATE} &
@@ -538,11 +538,11 @@ Các thay đổi trong trận (mua, sửa, nạp đạn, tấn công, bỏ lư�
 Server chia công việc cho các luồng như sau:
 \begin{itemize}
   \item \textbf{Luồng chính:} dùng \cmd{poll()} và socket non-blocking để nhận kết nối, đọc request, gửi response và xử lý timer. \cmd{poll()} cho biết socket nào đọc được, ghi được, bị lỗi hoặc đã đóng. Chỉ luồng này được sửa trạng thái phiên, đội, sảnh chờ và trận đấu nên không cần khóa dữ liệu game.
-  \item \textbf{Thread pool:} gồm 2 worker tạo bằng \cmd{pthread\_create()}, dùng để kiểm tra mật khẩu, đọc DB và đọc log. Các worker lấy việc từ hàng đợi chung được bảo vệ bằng mutex và condition variable.
-  \item \textbf{DB writer:} là 1 pthread riêng, ghi DB và ghi log theo thứ tự FIFO.
+  \item \textbf{Thread pool:} gồm 2 worker tạo bằng \cmd{pthread\_create()}, dùng để băm và kiểm tra mật khẩu. Các worker lấy việc từ hàng đợi chung được bảo vệ bằng mutex và condition variable.
+  \item \textbf{Luồng ghi file:} lưu các thay đổi tài khoản và ghi log theo thứ tự FIFO để luồng chính có thể tiếp tục xử lý socket trong lúc ghi.
 \end{itemize}
 
-Worker làm xong sẽ đưa kết quả vào hàng đợi và đánh thức luồng chính. Hàng đợi việc đầy thì server trả \cmd{9002}. Khi tắt server, luồng chính dùng \cmd{pthread\_join()} để chờ các pthread kết thúc. \cmd{poll()} quét toàn bộ danh sách socket theo $O(n)$, nhưng vẫn đủ nhanh với quy mô đồ án.
+Worker và luồng ghi file đưa kết quả xử lý request vào hàng đợi rồi đánh thức luồng chính. Hàng đợi thread pool đầy thì server trả \cmd{9002}. Khi tắt server, luồng chính dùng \cmd{pthread\_join()} để chờ các luồng kết thúc. \cmd{poll()} quét toàn bộ danh sách socket theo $O(n)$, nhưng vẫn đủ nhanh với quy mô đồ án.
 
 Dữ liệu nhận được nằm trong buffer nhận của kết nối cho tới khi gặp \cmd{\textbackslash r\textbackslash n} thì mới được phân tích JSON. Response và event được xếp vào buffer gửi và gửi đi khi mạng sẵn sàng. Hình~\ref{fig:main-loop} là vòng lặp của luồng chính.
 
@@ -559,7 +559,7 @@ Dữ liệu nhận được nằm trong buffer nhận của kết nối cho tớ
   \node[col, right=2mm of lis.north east, anchor=north west] (in) {\textbf{Client có dữ liệu}\\[2pt]\footnotesize Đọc, tách từng dòng, xử lý request};
   \node[col, right=2mm of in.north east, anchor=north west] (out) {\textbf{Client ghi được}\\[2pt]\footnotesize Gửi tiếp buffer gửi};
   \node[col, right=2mm of out.north east, anchor=north west] (err) {\textbf{Lỗi / đóng}\\[2pt]\footnotesize Hủy phiên, đóng kết nối};
-  \node[col, right=2mm of err.north east, anchor=north west] (res) {\textbf{Pool / DB writer xong}\\[2pt]\footnotesize Xử lý kết quả, trả response};
+  \node[col, right=2mm of err.north east, anchor=north west] (res) {\textbf{Có kết quả}\\[2pt]\footnotesize Từ worker hoặc luồng ghi file};
   \coordinate (bus) at ($(each.south)+(0,-4.5mm)$);
   \draw[thick] (each.south) -- (bus);
   \foreach \n in {lis,in,out,err,res} \draw[arr] (bus -| \n.north) -- (\n.north);
@@ -574,6 +574,17 @@ Dữ liệu nhận được nằm trong buffer nhận của kết nối cho tớ
 \end{tikzpicture}
 \caption{Vòng lặp của luồng chính}\label{fig:main-loop}
 \end{figure}
+
+\subsection{Lưu trữ bằng file}
+Khi khởi động, server nạp tài khoản từ \cmd{data/accounts.txt} và câu hỏi soạn sẵn từ \cmd{data/questions.txt} vào RAM. Mỗi dòng của file tài khoản có các trường sau, phân cách bằng dấu \texttt{\textbar}. Hash và salt được ghi ở dạng hex.
+\begin{lstlisting}
+user_id|username|password_hash|salt|role|locked
+\end{lstlisting}
+Server tra tài khoản trong RAM khi đăng nhập. Phiên đăng nhập, đội, lời mời, sảnh chờ và trận đấu tồn tại trong RAM trong thời gian server chạy. Khi mở rương, server chọn câu hỏi từ danh sách đã nạp.
+
+Khi đăng ký hoặc đổi mật khẩu, server xử lý lần lượt từng thay đổi tài khoản. Luồng chính tạo bản danh sách đã cập nhật từ dữ liệu hiện có trong RAM. Luồng ghi file lưu bản này vào file tạm cùng thư mục, rồi dùng \cmd{rename()} để thay file tài khoản sau khi ghi và đóng file tạm thành công. Khi nhận kết quả thành công, luồng chính cập nhật danh sách trong RAM và trả \cmd{1000}. Nếu lưu thất bại, server giữ dữ liệu cũ và trả \cmd{9001}. Luồng chính xử lý thay đổi tài khoản tiếp theo sau khi xử lý kết quả của lần ghi trước.
+
+Luồng ghi file nối các bản ghi hoạt động vào \cmd{logs/server.log}. Mỗi bản ghi có thời điểm, thao tác và kết quả. Các trường mật khẩu được che trước khi ghi log.
 
 \subsection{Phiên đăng nhập}
 Mỗi kết nối lưu buffer nhận, buffer gửi và tài khoản đang đăng nhập. Mới kết nối thì chưa đăng nhập, chỉ dùng được \cmd{REGISTER} và \cmd{LOGIN}. \cmd{LOGIN} thành công gắn tài khoản vào kết nối, gọi là một \emph{phiên}; \cmd{LOGOUT} hủy phiên nhưng giữ kết nối.
