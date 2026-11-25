@@ -90,7 +90,7 @@
   \item Thành viên mất kết nối khi đội không ở trong trận thì tự rời đội. Mất kết nối trong trận thì vẫn ở trong đội tới hết trận để còn vào lại được. Chỉ mời được người đang online và chưa có đội; đội trưởng chọn từ danh sách những người này.
   \item Không có lệnh chuyển đội trưởng. Khi đội trưởng rời đội hoặc mất kết nối ngoài trận, server tự chọn thành viên còn lại có slot nhỏ nhất làm đội trưởng mới; nếu không còn ai thì xóa đội.
   \item Hết trận, đội quay về room với các thành viên còn online, giữ nguyên đội trưởng, và thách đấu tiếp được ngay.
-  \item Chỉ 2 đội cùng số người mới thách đấu được nhau. Đội đang ở sảnh chờ hoặc trong trận thì bị khóa mọi thao tác đội, kể cả với admin.
+  \item Chỉ 2 đội cùng số người mới thách đấu được nhau. Server từ chối các thao tác quản lý đội khi đội đang ở sảnh chờ hoặc trong trận.
   \item Sảnh chờ dùng cấu hình cố định: thời gian lượt 30 giây, thời gian rương 30 giây và coin ban đầu 0. Đội trưởng đội chủ có thể bắt đầu trận ngay; không có bước chỉnh setting hoặc đội khách xác nhận sẵn sàng.
   \item Mỗi trận reset toàn bộ: coin, trang bị, HP, đạn. Coin tính riêng từng người.
 \end{itemize}
@@ -172,7 +172,6 @@ Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server t�
 \cmd{3001} & \cmd{NOT\_LOGGED\_IN} & Chưa đăng nhập \\
 \cmd{3002} & \cmd{ALREADY\_LOGGED\_IN} & Kết nối này đã đăng nhập rồi \\
 \cmd{3003} & \cmd{INVALID\_CREDENTIALS} & Tên đăng nhập hoặc mật khẩu không hợp lệ, hoặc thông tin đăng nhập không đúng \\
-\cmd{3004} & \cmd{ACCOUNT\_LOCKED} & Tài khoản bị khóa \\
 \cmd{3005} & \cmd{USERNAME\_TAKEN} & Tên đăng nhập đã tồn tại \\
 \midrule
 \multicolumn{3}{@{}l}{\textit{Phân quyền (4xxx)}} \\
@@ -252,7 +251,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Đăng nhập \newline \cmd{LOGIN} &
 \{"cmd":~"LOGIN", "username":~"son", "password":~"Abc123"\} &
-\textit{Thành công:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"user\_id":~1, "username":~"son", "role":~"PLAYER", "team\_id":~null\}\}}\newline \textit{Thành công, đang có trận dở; server gửi tiếp \cmd{MATCH\_RESUME}:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"user\_id":~1, "username":~"son", "role":~"PLAYER", "team\_id":~5\}\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu tham số\newline \cmd{3002} kết nối này đã đăng nhập\newline \cmd{3003} username/password sai định dạng, tài khoản không tồn tại hoặc mật khẩu không đúng\newline \cmd{3004} mật khẩu đúng nhưng tài khoản bị khóa\newline \cmd{9002} hàng đợi thread pool đầy \\
+\textit{Thành công:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"user\_id":~1, "username":~"son", "team\_id":~null\}\}}\newline \textit{Thành công, đang có trận dở; server gửi tiếp \cmd{MATCH\_RESUME}:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"user\_id":~1, "username":~"son", "team\_id":~5\}\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu tham số\newline \cmd{3002} kết nối này đã đăng nhập\newline \cmd{3003} username/password sai định dạng, tài khoản không tồn tại hoặc mật khẩu không đúng\newline \cmd{9002} hàng đợi thread pool đầy \\
 \midrule
 
 \normalfont Đăng xuất \newline \cmd{LOGOUT} &
@@ -262,7 +261,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Thông tin phiên \newline \cmd{WHOAMI} &
 \{"cmd":~"WHOAMI"\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"user\_id":~1, "username":~"son", "role":~"PLAYER", "team\_id":~5, "is\_captain":~true, "state":~"IDLE"\}\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"user\_id":~1, "username":~"son", "team\_id":~5, "is\_captain":~true, "state":~"IDLE"\}\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập \\
 \midrule
 
 \normalfont Đổi mật khẩu \newline \cmd{CHANGE\_PASSWORD} &
@@ -277,7 +276,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Xóa đội \newline \cmd{TEAM\_DELETE} &
 \{"cmd":~"TEAM\_\allowbreak{}DELETE", "team\_id":~5\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng hay admin\newline \cmd{4001} đội trưởng xóa đội khác\newline \cmd{5001} không có đội này\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận, kể cả admin \\
+\textit{Chỉ đội trưởng được xóa đội mình.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{4001} đội trưởng xóa đội khác\newline \cmd{5001} không có đội này\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
 \midrule
 
 \normalfont Danh sách đội \newline \cmd{TEAM\_LIST} &
@@ -332,7 +331,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Xóa thành viên \newline \cmd{TEAM\_KICK} &
 \{"cmd":~"TEAM\_\allowbreak{}KICK", "user\_id":~2\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng hay admin\newline \cmd{5008} người này không ở trong đội (với đội trưởng: không ở đội mình)\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận, kể cả admin \\
+\textit{Chỉ đội trưởng được xóa thành viên trong đội mình.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5008} người được chọn không thuộc đội của người gửi\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
 \midrule
 
 \normalfont Gửi thách đấu \newline \cmd{CHALLENGE\_SEND} &
@@ -419,7 +418,7 @@ Các thay đổi trong trận (mua, sửa, nạp đạn, tấn công, bỏ lư�
 \midrule\endhead
 
 \normalfont Buộc đăng xuất \newline \cmd{FORCE\_LOGOUT} &
-\{"type":~"evt", "evt":~"FORCE\_\allowbreak{}LOGOUT", "data":~\{"reason":~"LOCKED"\}\} \\
+\{"type":~"evt", "evt":~"FORCE\_\allowbreak{}LOGOUT", "data":~\{"reason":~"REPLACED"\}\} \\
 \midrule
 
 \normalfont Có người xin vào \newline \cmd{JOIN\_REQUEST} &
@@ -578,7 +577,7 @@ Dữ liệu nhận được nằm trong buffer nhận của kết nối cho tớ
 \subsection{Lưu trữ bằng file}
 Khi khởi động, server nạp tài khoản từ \cmd{data/accounts.txt} và câu hỏi soạn sẵn từ \cmd{data/questions.txt} vào RAM. Mỗi dòng của file tài khoản có các trường sau, phân cách bằng dấu \texttt{\textbar}. Hash và salt được ghi ở dạng hex.
 \begin{lstlisting}
-user_id|username|password_hash|salt|role|locked
+user_id|username|password_hash|salt
 \end{lstlisting}
 Server tra tài khoản trong RAM khi đăng nhập. Phiên đăng nhập, đội, lời mời, sảnh chờ và trận đấu tồn tại trong RAM trong thời gian server chạy. Khi mở rương, server chọn câu hỏi từ danh sách đã nạp.
 
@@ -635,11 +634,11 @@ Khi thao tác của một người ảnh hưởng tới người khác, server g
 \midrule
 -- & Client kết nối tới server & Tạo kết nối mới, đưa vào danh sách \cmd{pollfd} & \cmd{CONNECTED} \\
 \cmd{CONNECTED} & Nhận \cmd{LOGIN} hợp lệ & Giao việc kiểm tra mật khẩu cho thread pool & \cmd{AUTH\_PENDING} \\
-\cmd{AUTH\_PENDING} & Sai mật khẩu hoặc tài khoản bị khóa & Trả \cmd{3003} hoặc \cmd{3004} & \cmd{CONNECTED} \\
+\cmd{AUTH\_PENDING} & Thông tin đăng nhập không đúng & Trả \cmd{3003} & \cmd{CONNECTED} \\
 \cmd{AUTH\_PENDING} & Mật khẩu đúng & Thay phiên cũ nếu có, tạo phiên, trả \cmd{1000} & \cmd{LOGGED\_IN} \\
 \cmd{AUTH\_PENDING} & Mất kết nối & Đóng kết nối, bỏ kết quả kiểm tra mật khẩu về sau & \cmd{CLOSED} \\
 \cmd{LOGGED\_IN} & \cmd{LOGOUT} & Hủy phiên, trả \cmd{1000} & \cmd{CONNECTED} \\
-\cmd{LOGGED\_IN} & Bị thay thế, bị khóa, server tắt & Gửi \cmd{FORCE\_LOGOUT}, hủy phiên, đóng kết nối & \cmd{CLOSED} \\
+\cmd{LOGGED\_IN} & Phiên bị thay thế hoặc server tắt & Gửi \cmd{FORCE\_LOGOUT}, hủy phiên, đóng kết nối & \cmd{CLOSED} \\
 Bất kỳ & Client đóng kết nối, mất mạng, message quá dài, client nhận quá chậm & Hủy phiên nếu có, đóng kết nối & \cmd{CLOSED} \\
 \bottomrule
 \end{tabularx}
@@ -649,7 +648,7 @@ Bất kỳ & Client đóng kết nối, mất mạng, message quá dài, client 
 \subsection{Duy trì và kết thúc phiên}
 Server phát hiện kết nối đã đóng hoặc lỗi qua kết quả của \cmd{poll()} và \cmd{recv()}. Server không dùng heartbeat ở tầng ứng dụng và không đóng kết nối chỉ vì người dùng không thao tác.
 
-Phiên kết thúc khi client đăng xuất hoặc đóng kết nối, mất mạng, gửi message quá dài, nhận quá chậm làm buffer gửi vượt 256 KB, bị thay phiên, bị khóa, hoặc server tắt. Ba trường hợp cuối, client nhận \cmd{FORCE\_LOGOUT} (\cmd{REPLACED}, \cmd{LOCKED}, \cmd{SHUTDOWN}) trước khi kết nối bị đóng và không tự kết nối lại; các trường hợp mất kết nối khác thì client tự kết nối lại và gửi lại \cmd{LOGIN}.
+Phiên kết thúc khi client đăng xuất hoặc đóng kết nối, mất mạng, gửi message quá dài, nhận quá chậm làm buffer gửi vượt 256 KB, bị thay phiên hoặc server tắt. Hai trường hợp cuối, client nhận \cmd{FORCE\_LOGOUT} (\cmd{REPLACED} hoặc \cmd{SHUTDOWN}) trước khi kết nối bị đóng và không tự kết nối lại; các trường hợp mất kết nối khác thì client tự kết nối lại và gửi lại \cmd{LOGIN}.
 
 Sau khi hủy phiên, server dọn dẹp theo vị trí của người chơi: hủy các lời mời và lời xin vào; tự rời đội nếu đội đang rảnh; đóng sảnh chờ nếu đang ở sảnh (\cmd{LOBBY\_CLOSED}); nếu đang trong trận thì giữ tàu ở trạng thái offline (\cmd{MATCH\_UPDATE} với \cmd{action} là \cmd{DISCONNECTED}) và bỏ qua lượt của người đó. Cả đội offline liên tục 120 giây thì đội đó thua.
 
