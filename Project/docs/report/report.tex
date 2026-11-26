@@ -302,17 +302,17 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Duyệt xin vào \newline \cmd{TEAM\_JOIN\_REPLY} &
 \{"cmd":~"TEAM\_\allowbreak{}JOIN\_\allowbreak{}REPLY", "user\_id":~3, "accept":~true\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5009} không có lời xin vào của người này (chưa gửi hoặc đã bị hủy)\newline \cmd{5003} chấp nhận khi đội đã đủ 3 người\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5009} không có lời xin vào của người này (chưa gửi hoặc đã bị hủy)\newline \cmd{5003} đội đã đủ 3 người nên từ chối thao tác duyệt \newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
 \midrule
 
-\normalfont Người chơi mời được \newline \cmd{PLAYER\_LIST} &
+\normalfont Danh sách người chơi \newline \cmd{PLAYER\_LIST} &
 \{"cmd":~"PLAYER\_\allowbreak{}LIST"\} &
 \textit{Người đang online và chưa có đội:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"players":~[\{"user\_id":~2, "username":~"lan"\}]\}\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập \\
 \midrule
 
 \normalfont Mời vào đội \newline \cmd{TEAM\_INVITE} &
 \{"cmd":~"TEAM\_\allowbreak{}INVITE", "user\_id":~2\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5007} không có tài khoản này\newline \cmd{5011} người đó vừa offline\newline \cmd{5004} người đó vừa vào đội khác\newline \cmd{5003} đội đã đủ 3 người\newline \cmd{5010} đã mời người này rồi\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5007} tải khoản không tồn tại\newline \cmd{5011} người này đang offline\newline \cmd{5004} người này đang trong đội khác\newline \cmd{5003} đội đã đủ 3 người\newline \cmd{5010} đã mời người này rồi\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
 \midrule
 
 \normalfont Danh sách lời mời \newline \cmd{TEAM\_INVITE\_LIST} &
