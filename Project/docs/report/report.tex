@@ -92,7 +92,7 @@
   \item Hết trận, đội giữ các thành viên còn online và có thể thách đấu tiếp.
   \item Chỉ hai đội cùng số người mới thách đấu được nhau. Đội trưởng thách đấu đội khác. Sau khi đội trưởng đội nhận chấp nhận, đội trưởng đội gửi dùng \cmd{CHALLENGE\_START} để bắt đầu trận.
   \item Mỗi cặp đội có tối đa một lời thách đấu. Server ghi nhận việc chấp nhận trên lời thách đấu. Hai đội vẫn quản lý thành viên bình thường cho đến khi trận bắt đầu. Nếu một đội đổi thành viên hoặc bị xóa, server hủy các lời thách đấu liên quan.
-  \item Khi bắt đầu trận, server kiểm tra lời thách đấu đã được chấp nhận và hai đội còn rảnh, có cùng số thành viên. Server dùng lời thách đấu này để tạo trận, hủy các lời thách đấu khác liên quan đến hai đội, rồi gửi \cmd{MATCH\_START} và \cmd{TURN\_START}. Trong trận, server từ chối các thao tác quản lý của hai đội.
+  \item Khi bắt đầu trận, server kiểm tra lời thách đấu đã được chấp nhận và hai đội còn rảnh, có cùng số thành viên. Server dùng lời thách đấu này để tạo trận, hủy các lời thách đấu khác liên quan đến hai đội, rồi gửi \cmd{MATCH\_START} và xử lý lượt đầu tiên. Trong trận, server từ chối các thao tác quản lý của hai đội.
   \item Mỗi trận có thời gian lượt 30 giây, thời gian trả lời rương 30 giây và coin ban đầu bằng 0.
   \item Mỗi trận reset toàn bộ: coin, trang bị, HP, đạn. Coin tính riêng từng người.
 \end{itemize}
@@ -125,10 +125,12 @@ Sửa tàu & 1/HP & -- & Tối đa 1000 HP; tàu đã chết không sửa đư�
 
 \subsection{Lượt và rương kho báu}
 \begin{itemize}
-  \item Thứ tự lượt A0 $\rightarrow$ B0 $\rightarrow$ A1 $\rightarrow$ B1 $\rightarrow$ A2 $\rightarrow$ B2 (A là đội gửi thách đấu, B là đội chấp nhận, số là slot), bỏ qua slot trống và tàu đã chết. Trong lượt của mình: mua, sửa, reload, mở rương; bấm tấn công là hết lượt. Ngoài lượt chỉ được reload.
+  \item Thứ tự lượt A0 $\rightarrow$ B0 $\rightarrow$ A1 $\rightarrow$ B1 $\rightarrow$ A2 $\rightarrow$ B2 (A là đội gửi thách đấu, B là đội chấp nhận, số là slot), bỏ qua slot trống và tàu đã chết. Người đang tới lượt được mua đồ, sửa tàu và tấn công. Tấn công thành công thì chuyển lượt. Người chơi được nạp đạn cả trong và ngoài lượt.
   \item Hết giờ lượt hoặc mất kết nối thì bị bỏ qua lượt.
-  \item Mỗi lượt server thả 1 rương: đồng 60\% (100 coin), bạc 30\% (500), vàng 10\% (2000). Mở rương là không bắt buộc.
-  \item Mở rương thì đồng hồ lượt tạm dừng và rương có đồng hồ riêng. Trong lúc đó chỉ được trả lời. Câu hỏi trắc nghiệm, trả lời 1 lần: đúng thì nhận coin, sai thì mất rương. Đồng đội chỉ được xem câu hỏi; đối phương không thấy.
+  \item Trước khi đồng hồ lượt bắn bắt đầu, server bốc một lần với xác suất thả rương 30\%. Khi thả, server chọn loại đồng với xác suất 60\% (100 coin), bạc 30\% (500 coin) hoặc vàng 10\% (2000 coin). Nếu không có rương, server bắt đầu lượt bắn ngay.
+  \item Server cấp ID tăng dần cho mỗi rương và gửi cùng một câu hỏi trắc nghiệm tới cả hai đội. Mọi người chơi đang kết nối có tàu còn sống đều được trả lời, kể cả ngoài lượt bắn. Server ghi nhận một lựa chọn hợp lệ trên mỗi tài khoản cho mỗi rương. Trả lời sai chỉ hết quyền trả lời rương đó của người gửi.
+  \item Rương nhận câu trả lời trong 30 giây kể từ lúc thả. Trong thời gian này, server khóa các lệnh mua đồ, sửa tàu, nạp đạn và tấn công của trận đó. Vòng lặp server vẫn nhận câu trả lời và phục vụ các kết nối khác.
+  \item Khi có câu trả lời đúng đầu tiên trước hạn, server cộng toàn bộ coin cho người trả lời và đóng rương ngay. Rương cũng đóng khi hết hạn. Server gửi \cmd{CHEST\_RESULT}, sau đó bắt đầu lượt bắn 30 giây và phát \cmd{TURN\_START} cho cả hai đội. Nếu người đã được xếp lượt đang mất kết nối, người tiếp theo còn kết nối và còn sống nhận lượt bắn này. Khi trận kết thúc, server hủy rương còn mở.
   \item Đội bị hạ hết tàu thì thua. Cả đội offline liên tục 120 giây thì thua do bỏ cuộc.
 \end{itemize}
 
@@ -208,10 +210,10 @@ Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server t�
 \cmd{7008} & \cmd{NO\_AMMO} & Khẩu được chọn đã hết đạn, hoặc không đủ tên lửa \\
 \cmd{7009} & \cmd{NO\_RESERVE} & Hết thùng đạn hoặc bộ nguồn để reload \\
 \cmd{7010} & \cmd{HP\_FULL} & HP đã đầy \\
-\cmd{7011} & \cmd{NO\_CHEST} & Lượt này không có rương hoặc rương đã mở \\
-\cmd{7012} & \cmd{CHEST\_ACTIVE} & Đang mở rương, chỉ được trả lời câu hỏi \\
-\cmd{7013} & \cmd{CHEST\_EXPIRED} & Hết giờ trả lời rương \\
+\cmd{7011} & \cmd{NO\_CHEST} & ID không khớp với rương đang nhận câu trả lời, hoặc rương đã đóng hay hết hạn \\
+\cmd{7012} & \cmd{CHEST\_ACTIVE} & Trận đang chờ trả lời rương, các thao tác chiến đấu đang tạm dừng \\
 \cmd{7014} & \cmd{NO\_GUN} & Chỗ được chọn chưa lắp pháo \\
+\cmd{7015} & \cmd{CHEST\_ALREADY\_ANSWERED} & Người chơi đã gửi một lựa chọn hợp lệ cho rương này \\
 \midrule
 \multicolumn{3}{@{}l}{\textit{Server (9xxx)}} \\
 \cmd{9001} & \cmd{INTERNAL\_ERROR} & Lỗi phía server, ví dụ không lưu được thay đổi tài khoản vào file \\
@@ -367,32 +369,27 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Mua vật phẩm \newline \cmd{BUY} &
 \{"cmd":~"BUY", "item":~"LASER", "qty":~1\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{item}, \cmd{qty}\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7002} chưa tới lượt\newline \cmd{7012} đang mở rương\newline \cmd{7004} không đủ coin cho toàn bộ \cmd{qty}\newline \cmd{7005} đã đủ 3 laze, 4 tên lửa, hoặc 2 lớp giáp còn đầy \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{item}, \cmd{qty}\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7012} trận đang chờ trả lời rương\newline \cmd{7002} chưa tới lượt\newline \cmd{7004} không đủ coin cho toàn bộ \cmd{qty}\newline \cmd{7005} đã đủ 3 laze, 4 tên lửa, hoặc 2 lớp giáp còn đầy \\
 \midrule
 
 \normalfont Sửa tàu \newline \cmd{REPAIR} &
 \{"cmd":~"REPAIR", "hp":~150\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{hp}\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7002} chưa tới lượt\newline \cmd{7012} đang mở rương\newline \cmd{7004} không đủ coin\newline \cmd{7010} HP đã đầy \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{hp}\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7012} trận đang chờ trả lời rương\newline \cmd{7002} chưa tới lượt\newline \cmd{7004} không đủ coin\newline \cmd{7010} HP đã đầy \\
 \midrule
 
 \normalfont Nạp đạn \newline \cmd{RELOAD} &
 \{"cmd":~"RELOAD", "index":~1\} &
-\textit{Thành công, làm được cả ngoài lượt:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai \cmd{index}\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7012} đang mở rương\newline \cmd{7014} chỗ này chưa lắp pháo\newline \cmd{7009} hết thùng đạn (chỗ 0) hoặc hết bộ nguồn (chỗ 1--3) \\
+\textit{Thành công, làm được cả ngoài lượt:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai \cmd{index}\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7012} trận đang chờ trả lời rương\newline \cmd{7014} chỗ này chưa lắp pháo\newline \cmd{7009} hết thùng đạn (chỗ 0) hoặc hết bộ nguồn (chỗ 1--3) \\
 \midrule
 
-\normalfont Mở rương \newline \cmd{CHEST\_OPEN} &
-\{"cmd":~"CHEST\_\allowbreak{}OPEN"\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7002} chưa tới lượt\newline \cmd{7012} đang mở rương\newline \cmd{7011} lượt này không có rương hoặc rương đã mở \\
-\midrule
-
-\normalfont Trả lời rương \newline \cmd{CHEST\_ANSWER} &
-\{"cmd":~"CHEST\_\allowbreak{}ANSWER", "choice":~"B"\} &
-\textit{Đã nhận câu trả lời; đúng hay sai báo trong \cmd{CHEST\_RESULT}:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai \cmd{choice}\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7002} chưa tới lượt\newline \cmd{7011} chưa mở rương hoặc đã trả lời rồi\newline \cmd{7013} hết giờ trả lời \\
+\normalfont Trả lời để mở rương \newline \cmd{CHEST\_ANSWER} &
+\{"cmd":~"CHEST\_\allowbreak{}ANSWER", "chest\_id":~7, "choice":~"B"\} &
+\textit{Phản hồi riêng cho người trả lời, \cmd{correct} là \cmd{true} nếu mở được rương và \cmd{false} nếu trả lời sai.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"correct":~true\}\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai \cmd{chest\_id}, \cmd{choice} phải là A, B, C hoặc D\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7011} ID rương không khớp, rương đã đóng hoặc hết hạn\newline \cmd{7015} đã trả lời rương này \\
 \midrule
 
 \normalfont Tấn công \newline \cmd{ATTACK} &
 \{"cmd":~"ATTACK", "target":~4, "indexes":~[1, 2], "missiles":~1\} &
-\textit{Thành công, lượt kết thúc:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu tham số\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7002} chưa tới lượt\newline \cmd{7012} đang mở rương\newline \cmd{7006} mục tiêu là đồng đội, đã bị hạ hoặc không ở trong trận\newline \cmd{7007} trộn pháo tự động với laze, chọn trùng khẩu, hoặc không chọn vũ khí nào\newline \cmd{7014} chọn chỗ chưa lắp pháo\newline \cmd{7008} khẩu được chọn đã hết đạn, hoặc không đủ tên lửa \\
+\textit{Thành công, lượt kết thúc:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu tham số\newline \cmd{3001} chưa đăng nhập\newline \cmd{7001} không ở trong trận\newline \cmd{7003} tàu đã bị hạ\newline \cmd{7012} trận đang chờ trả lời rương\newline \cmd{7002} chưa tới lượt\newline \cmd{7006} mục tiêu là đồng đội, đã bị hạ hoặc không ở trong trận\newline \cmd{7007} trộn pháo tự động với laze, chọn trùng khẩu, hoặc không chọn vũ khí nào\newline \cmd{7014} chọn chỗ chưa lắp pháo\newline \cmd{7008} khẩu được chọn đã hết đạn, hoặc không đủ tên lửa \\
 \bottomrule
 \caption{Request và response message của toàn bộ lệnh}\label{tab:commands-detail}
 \end{longtable}
@@ -401,7 +398,11 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 Mọi chỗ nhắc tới một người chơi (\cmd{player}, \cmd{attacker}, \cmd{target}, \cmd{from}, \cmd{by}, \cmd{captain}) đều gửi \cmd{\{"user\_id","username"\}}: \cmd{user\_id} để định danh và gửi lại trong request, \cmd{username} để hiển thị.
 
-\cmd{state} là snapshot trận mới nhất, gửi kèm mọi event trong trận trừ \cmd{CHEST\_DROP} và \cmd{CHEST\_QUESTION}. Mỗi người nhận một bản riêng: \cmd{match\_id}; \cmd{turn} (người đang tới lượt, \cmd{deadline\_ms}, \cmd{paused}); \cmd{chest} (\cmd{tier}, \cmd{opened}, hoặc \cmd{null}); \cmd{teams}, mỗi đội có danh sách \cmd{ships}. Mỗi tàu có \cmd{user\_id}, \cmd{username}, \cmd{slot}, \cmd{online}, \cmd{alive}, \cmd{hp}, \cmd{armor}, \cmd{missiles} và mảng \cmd{guns} gồm 4 chỗ lắp pháo (chỗ 0 là pháo tự động, chỗ 1--3 là laze, chỗ trống là \cmd{null}). Tàu cùng đội có thêm \cmd{coin}, số đạn trong băng từng khẩu (\cmd{mag}), \cmd{ammo\_boxes} và \cmd{power\_packs}; tàu đối phương bị giấu các trường này. Trong bảng dưới, \cmd{\{...\}} và \cmd{[...]} là phần được lược bớt cho gọn.
+\cmd{state} là snapshot trận mới nhất, gửi kèm mọi event trong trận. Mỗi người nhận một bản riêng, gồm \cmd{match\_id}, \cmd{turn} (người được xếp lượt và \cmd{deadline\_ms}), \cmd{chest} và \cmd{teams}. Trong lúc chờ trả lời rương, \cmd{turn.deadline\_ms} là \cmd{null}.
+
+Khi có rương đang nhận câu trả lời, \cmd{chest} chứa \cmd{chest\_id}, \cmd{tier}, \cmd{question}, \cmd{choices}, \cmd{deadline\_ms} và \cmd{can\_answer}. Ba giá trị của \cmd{tier} là \cmd{BRONZE}, \cmd{SILVER} và \cmd{GOLD}. Cờ \cmd{can\_answer} cho biết người nhận còn quyền trả lời. Khi trận không có rương đang nhận câu trả lời, \cmd{chest} là \cmd{null}. Server giữ đáp án trong dữ liệu nội bộ.
+
+Mỗi đội trong \cmd{teams} có danh sách \cmd{ships}. Mỗi tàu có \cmd{user\_id}, \cmd{username}, \cmd{slot}, \cmd{online}, \cmd{alive}, \cmd{hp}, \cmd{armor}, \cmd{missiles} và mảng \cmd{guns} gồm 4 chỗ lắp pháo (chỗ 0 là pháo tự động, chỗ 1--3 là laze, chỗ trống là \cmd{null}). Tàu cùng đội có thêm \cmd{coin}, số đạn trong băng từng khẩu (\cmd{mag}), \cmd{ammo\_boxes} và \cmd{power\_packs}; tàu đối phương bị giấu các trường này. Trong bảng dưới, \cmd{\{...\}} và \cmd{[...]} là phần được lược bớt cho gọn.
 
 Các thay đổi trong trận (mua, sửa, nạp đạn, tấn công, bỏ lượt, mất kết nối, kết nối lại, tàu bị hạ) dùng chung một event \cmd{MATCH\_UPDATE}; trường \cmd{action} cho biết chuyện gì vừa xảy ra.
 
@@ -467,19 +468,18 @@ Các thay đổi trong trận (mua, sửa, nạp đạn, tấn công, bỏ lư�
 \midrule
 
 \normalfont Bắt đầu lượt \newline \cmd{TURN\_START} &
+\textit{Bắt đầu tính 30 giây cho lượt bắn. Nếu đầu lượt có rương, gửi sự kiện này sau \cmd{CHEST\_RESULT}.}\newline
 \{"type":~"evt", "evt":~"TURN\_\allowbreak{}START", "data":~\{"player":~\{"user\_id":~1, "username":~"son"\}, "deadline\_ms":~1763430146000, "state":~\{...\}\}\} \\
 \midrule
 
 \normalfont Thả rương \newline \cmd{CHEST\_DROP} &
-\{"type":~"evt", "evt":~"CHEST\_\allowbreak{}DROP", "data":~\{"player":~\{"user\_id":~1, "username":~"son"\}, "tier":~"SILVER"\}\} \\
-\midrule
-
-\normalfont Câu hỏi rương \newline \cmd{CHEST\_QUESTION} &
-\{"type":~"evt", "evt":~"CHEST\_\allowbreak{}QUESTION", "data":~\{"tier":~"SILVER", "question":~"2+2=?", "choices":~["3", "4", "5", "6"], "deadline\_ms":~1763430150000, "can\_answer":~true\}\} \\
+\textit{Gửi tới cả hai đội trước khi bắt đầu lượt bắn. Câu hỏi và các lựa chọn nằm trong \cmd{state.chest}.}\newline
+\{"type":~"evt", "evt":~"CHEST\_\allowbreak{}DROP", "data":~\{"state":~\{"chest":~\{"chest\_id":~7, "tier":~"SILVER", "question":~"2+2=?", "choices":~["3", "4", "5", "6"], "deadline\_ms":~1763430150000, "can\_answer":~true\}, ...\}\}\} \\
 \midrule
 
 \normalfont Kết quả rương \newline \cmd{CHEST\_RESULT} &
-\{"type":~"evt", "evt":~"CHEST\_\allowbreak{}RESULT", "data":~\{"correct":~true, "answer":~"B", "coin":~500, "state":~\{...\}\}\} \\
+\textit{Gửi tới cả hai đội khi có người mở rương hoặc khi hết hạn. Khi hết hạn, \cmd{winner} là \cmd{null} và \cmd{coin} bằng 0.}\newline
+\{"type":~"evt", "evt":~"CHEST\_\allowbreak{}RESULT", "data":~\{"chest\_id":~7, "winner":~\{"user\_id":~1, "username":~"son"\}, "coin":~500, "state":~\{"chest":~null, ...\}\}\} \\
 \midrule
 
 \normalfont Cập nhật trận \newline \cmd{MATCH\_UPDATE} \newline \cmd{action}=\cmd{PURCHASE} &
@@ -568,11 +568,11 @@ Khi khởi động, server nạp tài khoản từ \cmd{data/accounts.txt} và c
 \begin{lstlisting}
 user_id|username|password_hash|salt
 \end{lstlisting}
-Server tra tài khoản trong RAM khi đăng nhập. Phiên đăng nhập, đội, lời mời, lời thách đấu và trận đấu tồn tại trong RAM trong thời gian server chạy. Khi mở rương, server chọn câu hỏi từ danh sách đã nạp.
+Server tra tài khoản trong RAM khi đăng nhập. Phiên đăng nhập, đội, lời mời, lời thách đấu và trận đấu tồn tại trong RAM trong thời gian server chạy. Khi thả rương, server chọn câu hỏi từ danh sách đã nạp.
 
 Khi đăng ký hoặc đổi mật khẩu, server xử lý lần lượt từng thay đổi tài khoản. Luồng chính tạo bản danh sách đã cập nhật từ dữ liệu hiện có trong RAM. Luồng ghi file lưu bản này vào file tạm cùng thư mục, rồi dùng \cmd{rename()} để thay file tài khoản sau khi ghi và đóng file tạm thành công. Khi nhận kết quả thành công, luồng chính cập nhật danh sách trong RAM và trả \cmd{1000}. Nếu lưu thất bại, server giữ dữ liệu cũ và trả \cmd{9001}. Luồng chính xử lý thay đổi tài khoản tiếp theo sau khi xử lý kết quả của lần ghi trước.
 
-Luồng ghi file nối các bản ghi hoạt động vào \cmd{logs/server.log}. Mỗi bản ghi có thời điểm, thao tác và kết quả. Các trường mật khẩu được che trước khi ghi log.
+Luồng ghi file nối các bản ghi hoạt động vào \cmd{logs/server.log}. Mỗi bản ghi có thời điểm, thao tác và kết quả. Khi thả hoặc đóng rương, log ghi ID rương, người nhận và số coin nếu có. Các trường mật khẩu được che trước khi ghi log.
 
 \subsection{Phiên đăng nhập}
 Mỗi kết nối lưu buffer nhận, buffer gửi và tài khoản đang đăng nhập. Mới kết nối thì chưa đăng nhập, chỉ dùng được \cmd{REGISTER} và \cmd{LOGIN}. \cmd{LOGIN} thành công gắn tài khoản vào kết nối, gọi là một \emph{phiên}; \cmd{LOGOUT} hủy phiên nhưng giữ kết nối.
