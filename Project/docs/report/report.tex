@@ -89,9 +89,11 @@
   \item Đội hoạt động như \emph{party} khi ghép trận: chỉ tồn tại trong RAM của server, gồm những người đang online. Mỗi đội có 3 slot cố định (0, 1, 2), tối đa 3 người; slot quyết định thứ tự lượt chơi trong trận.
   \item Thành viên mất kết nối khi đội không ở trong trận thì tự rời đội. Mất kết nối trong trận thì vẫn ở trong đội tới hết trận để còn vào lại được. Chỉ mời được người đang online và chưa có đội; đội trưởng chọn từ danh sách những người này.
   \item Không có lệnh chuyển đội trưởng. Khi đội trưởng rời đội hoặc mất kết nối ngoài trận, server tự chọn thành viên còn lại có slot nhỏ nhất làm đội trưởng mới; nếu không còn ai thì xóa đội.
-  \item Hết trận, đội quay về room với các thành viên còn online, giữ nguyên đội trưởng, và thách đấu tiếp được ngay.
-  \item Chỉ 2 đội cùng số người mới thách đấu được nhau. Server từ chối các thao tác quản lý đội khi đội đang ở sảnh chờ hoặc trong trận.
-  \item Sảnh chờ dùng cấu hình cố định: thời gian lượt 30 giây, thời gian rương 30 giây và coin ban đầu 0. Đội trưởng đội chủ có thể bắt đầu trận ngay; không có bước chỉnh setting hoặc đội khách xác nhận sẵn sàng.
+  \item Hết trận, đội giữ các thành viên còn online và có thể thách đấu tiếp.
+  \item Chỉ hai đội cùng số người mới thách đấu được nhau. Đội trưởng thách đấu đội khác. Sau khi đội trưởng đội nhận chấp nhận, đội trưởng đội gửi dùng \cmd{CHALLENGE\_START} để bắt đầu trận.
+  \item Mỗi cặp đội có tối đa một lời thách đấu. Server ghi nhận việc chấp nhận trên lời thách đấu. Hai đội vẫn quản lý thành viên bình thường cho đến khi trận bắt đầu. Nếu một đội đổi thành viên hoặc bị xóa, server hủy các lời thách đấu liên quan.
+  \item Khi bắt đầu trận, server kiểm tra lời thách đấu đã được chấp nhận và hai đội còn rảnh, có cùng số thành viên. Server dùng lời thách đấu này để tạo trận, hủy các lời thách đấu khác liên quan đến hai đội, rồi gửi \cmd{MATCH\_START} và \cmd{TURN\_START}. Trong trận, server từ chối các thao tác quản lý của hai đội.
+  \item Mỗi trận có thời gian lượt 30 giây, thời gian trả lời rương 30 giây và coin ban đầu bằng 0.
   \item Mỗi trận reset toàn bộ: coin, trang bị, HP, đạn. Coin tính riêng từng người.
 \end{itemize}
 
@@ -123,7 +125,7 @@ Sửa tàu & 1/HP & -- & Tối đa 1000 HP; tàu đã chết không sửa đư�
 
 \subsection{Lượt và rương kho báu}
 \begin{itemize}
-  \item Thứ tự lượt A0 $\rightarrow$ B0 $\rightarrow$ A1 $\rightarrow$ B1 $\rightarrow$ A2 $\rightarrow$ B2 (A là đội chủ, B là đội khách, số là slot), bỏ qua tàu đã chết. Trong lượt của mình: mua, sửa, reload, mở rương; bấm tấn công là hết lượt. Ngoài lượt chỉ được reload.
+  \item Thứ tự lượt A0 $\rightarrow$ B0 $\rightarrow$ A1 $\rightarrow$ B1 $\rightarrow$ A2 $\rightarrow$ B2 (A là đội gửi thách đấu, B là đội chấp nhận, số là slot), bỏ qua slot trống và tàu đã chết. Trong lượt của mình: mua, sửa, reload, mở rương; bấm tấn công là hết lượt. Ngoài lượt chỉ được reload.
   \item Hết giờ lượt hoặc mất kết nối thì bị bỏ qua lượt.
   \item Mỗi lượt server thả 1 rương: đồng 60\% (100 coin), bạc 30\% (500), vàng 10\% (2000). Mở rương là không bắt buộc.
   \item Mở rương thì đồng hồ lượt tạm dừng và rương có đồng hồ riêng. Trong lúc đó chỉ được trả lời. Câu hỏi trắc nghiệm, trả lời 1 lần: đúng thì nhận coin, sai thì mất rương. Đồng đội chỉ được xem câu hỏi; đối phương không thấy.
@@ -144,7 +146,7 @@ Mỗi message là 1 object JSON UTF-8 trên 1 dòng, kết thúc bằng \cmd{\te
 Request \newline (C$\rightarrow$S) & \cmd{cmd}, tham số & \cmd{cmd} xác định lệnh cần thực hiện; mỗi kết nối chỉ có một request đang chờ response &
 \{"cmd":"ATTACK",\newline "target":4,\newline "indexes":[1,2],\newline "missiles":1\} \\
 \midrule
-Response \newline (S$\rightarrow$C) & \cmd{type}, \cmd{code}, \cmd{msg}, \cmd{data} & Đúng 1 response cho request đang chờ; \cmd{code} thuộc nhóm \cmd{1xxx} thành công, \cmd{2xxx} định dạng, \cmd{3xxx} tài khoản/phiên, \cmd{4xxx} phân quyền, \cmd{5xxx} đội, \cmd{6xxx} thách đấu/sảnh chờ, \cmd{7xxx} trong trận, \cmd{9xxx} lỗi server &
+Response \newline (S$\rightarrow$C) & \cmd{type}, \cmd{code}, \cmd{msg}, \cmd{data} & Đúng 1 response cho request đang chờ; \cmd{code} thuộc nhóm \cmd{1xxx} thành công, \cmd{2xxx} định dạng, \cmd{3xxx} tài khoản/phiên, \cmd{4xxx} phân quyền, \cmd{5xxx} đội, \cmd{6xxx} thách đấu và bắt đầu trận, \cmd{7xxx} trong trận, \cmd{9xxx} lỗi server &
 \{"type":"res",\newline "code":1000,"msg":"OK"\} \\
 \midrule
 Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server tự gửi; event trong trận kèm \cmd{state} &
@@ -183,19 +185,17 @@ Event \newline (S$\rightarrow$C) & \cmd{type}, \cmd{evt}, \cmd{data} & Server t�
 \cmd{5002} & \cmd{TEAM\_NAME\_TAKEN} & Tên đội đã tồn tại \\
 \cmd{5003} & \cmd{TEAM\_FULL} & Đội đã đủ 3 người \\
 \cmd{5004} & \cmd{ALREADY\_IN\_TEAM} & Người chơi đã ở trong một đội \\
-\cmd{5006} & \cmd{TEAM\_BUSY} & Đội đang ở sảnh chờ hoặc trong trận \\
+\cmd{5006} & \cmd{TEAM\_BUSY} & Đội đang trong trận \\
 \cmd{5007} & \cmd{USER\_NOT\_FOUND} & Không tìm thấy người chơi \\
 \cmd{5008} & \cmd{NOT\_A\_MEMBER} & Người này không ở trong đội \\
 \cmd{5009} & \cmd{REQUEST\_NOT\_FOUND} & Không có lời xin vào hoặc lời mời tương ứng \\
-\cmd{5010} & \cmd{ALREADY\_PENDING} & Đã gửi lời xin vào hoặc lời mời trước đó rồi \\
+\cmd{5010} & \cmd{ALREADY\_PENDING} & Đã có lời xin vào, lời mời hoặc lời thách đấu giữa hai đội \\
 \cmd{5011} & \cmd{USER\_OFFLINE} & Người được mời đang offline \\
 \midrule
-\multicolumn{3}{@{}l}{\textit{Thách đấu, sảnh chờ (6xxx)}} \\
-\cmd{6001} & \cmd{TEAM\_SIZE\_MISMATCH} & Hai đội không cùng số thành viên khi gửi hoặc chấp nhận thách đấu \\
-\cmd{6002} & \cmd{CHALLENGE\_NOT\_FOUND} & Không có lời thách đấu tương ứng \\
+\multicolumn{3}{@{}l}{\textit{Thách đấu và bắt đầu trận (6xxx)}} \\
+\cmd{6001} & \cmd{TEAM\_SIZE\_MISMATCH} & Hai đội không cùng số thành viên khi gửi, chấp nhận thách đấu hoặc bắt đầu trận \\
+\cmd{6002} & \cmd{CHALLENGE\_NOT\_FOUND} & Không có lời thách đấu hợp lệ cho thao tác này \\
 \cmd{6003} & \cmd{SAME\_TEAM} & Không thể thách đấu chính đội mình \\
-\cmd{6004} & \cmd{NOT\_IN\_LOBBY} & Không ở trong sảnh chờ \\
-\cmd{6007} & \cmd{ONLY\_HOST} & Chỉ đội chủ được làm \\
 \midrule
 \multicolumn{3}{@{}l}{\textit{Trong trận (7xxx)}} \\
 \cmd{7001} & \cmd{NOT\_IN\_MATCH} & Không ở trong trận \\
@@ -277,7 +277,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Xóa đội \newline \cmd{TEAM\_DELETE} &
 \{"cmd":~"TEAM\_\allowbreak{}DELETE", "team\_id":~5\} &
-\textit{Chỉ đội trưởng được xóa đội mình.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{4001} đội trưởng xóa đội khác\newline \cmd{5001} không có đội này\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận, trường \cmd{msg} nêu rõ trạng thái \\
+\textit{Chỉ đội trưởng được xóa đội mình.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{4001} đội trưởng xóa đội khác\newline \cmd{5001} không có đội này\newline \cmd{5006} đội đang trong trận \\
 \midrule
 
 \normalfont Danh sách đội \newline \cmd{TEAM\_LIST} &
@@ -292,7 +292,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Xin vào đội \newline \cmd{TEAM\_JOIN\_REQUEST} &
 \{"cmd":~"TEAM\_\allowbreak{}JOIN\_\allowbreak{}REQUEST", "team\_id":~5\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{5004} đã ở trong một đội\newline \cmd{5001} không có đội này\newline \cmd{5003} đội đã đủ 3 người\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận\newline \cmd{5010} đã xin vào đội này rồi \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{5004} đã ở trong một đội\newline \cmd{5001} không có đội này\newline \cmd{5003} đội đã đủ 3 người\newline \cmd{5006} đội đang trong trận\newline \cmd{5010} đã xin vào đội này rồi \\
 \midrule
 
 \normalfont Danh sách xin vào \newline \cmd{TEAM\_JOIN\_LIST} &
@@ -302,7 +302,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Duyệt xin vào \newline \cmd{TEAM\_JOIN\_REPLY} &
 \{"cmd":~"TEAM\_\allowbreak{}JOIN\_\allowbreak{}REPLY", "user\_id":~3, "accept":~true\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5009} không có lời xin vào của người này (chưa gửi hoặc đã bị hủy)\newline \cmd{5003} đội đã đủ 3 người nên từ chối thao tác duyệt \newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5009} không có lời xin vào của người này (chưa gửi hoặc đã bị hủy)\newline \cmd{5003} đội đã đủ 3 người nên từ chối thao tác duyệt \newline \cmd{5006} đội đang trong trận \\
 \midrule
 
 \normalfont Danh sách người chơi \newline \cmd{PLAYER\_LIST} &
@@ -312,7 +312,7 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Mời vào đội \newline \cmd{TEAM\_INVITE} &
 \{"cmd":~"TEAM\_\allowbreak{}INVITE", "user\_id":~2\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5007} tải khoản không tồn tại\newline \cmd{5011} người này đang offline\newline \cmd{5004} người này đang trong đội khác\newline \cmd{5003} đội đã đủ 3 người\newline \cmd{5010} đã mời người này rồi\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5007} tải khoản không tồn tại\newline \cmd{5011} người này đang offline\newline \cmd{5004} người này đang trong đội khác\newline \cmd{5003} đội đã đủ 3 người\newline \cmd{5010} đã mời người này rồi\newline \cmd{5006} đội đang trong trận \\
 \midrule
 
 \normalfont Danh sách lời mời \newline \cmd{TEAM\_INVITE\_LIST} &
@@ -322,47 +322,42 @@ Message dài quá 8192 byte; server trả lỗi rồi đóng kết nối & \js{\
 
 \normalfont Trả lời lời mời \newline \cmd{TEAM\_INVITE\_REPLY} &
 \{"cmd":~"TEAM\_\allowbreak{}INVITE\_\allowbreak{}REPLY", "team\_id":~5, "accept":~true\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{5009} không có lời mời từ đội này\newline \cmd{5004} đã ở trong một đội\newline \cmd{5003} chấp nhận khi đội đã đủ 3 người\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{5009} không có lời mời từ đội này\newline \cmd{5004} đã ở trong một đội\newline \cmd{5003} chấp nhận khi đội đã đủ 3 người\newline \cmd{5006} đội đang trong trận \\
 \midrule
 
 \normalfont Rời đội \newline \cmd{TEAM\_LEAVE} &
 \{"cmd":~"TEAM\_\allowbreak{}LEAVE"\} &
-\textit{Thành công; nếu chưa có đội thì không thay đổi gì:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
+\textit{Thành công; nếu chưa có đội thì không thay đổi gì:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập\newline \cmd{5006} đội đang trong trận \\
 \midrule
 
 \normalfont Xóa thành viên \newline \cmd{TEAM\_KICK} &
 \{"cmd":~"TEAM\_\allowbreak{}KICK", "user\_id":~2\} &
-\textit{Chỉ đội trưởng được xóa thành viên trong đội mình.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5008} người được chọn không thuộc đội của người gửi\newline \cmd{5006} đội đang ở sảnh chờ hoặc trong trận \\
+\textit{Chỉ đội trưởng được xóa thành viên trong đội mình.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{user\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5008} người được chọn không thuộc đội của người gửi\newline \cmd{5006} đội đang trong trận \\
 \midrule
 
 \normalfont Gửi thách đấu \newline \cmd{CHALLENGE\_SEND} &
 \{"cmd":~"CHALLENGE\_\allowbreak{}SEND", "team\_id":~8\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5001} không có đội này\newline \cmd{6003} thách đấu chính đội mình\newline \cmd{5006} một trong hai đội đang ở sảnh chờ hoặc trong trận\newline \cmd{6001} hai đội không cùng số thành viên \\
+\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{5001} không có đội này\newline \cmd{6003} thách đấu chính đội mình\newline \cmd{5006} một trong hai đội đang trong trận\newline \cmd{5010} đã có lời thách đấu giữa hai đội\newline \cmd{6001} hai đội không cùng số thành viên \\
 \midrule
 
 \normalfont Danh sách thách đấu \newline \cmd{CHALLENGE\_LIST} &
 \{"cmd":~"CHALLENGE\_\allowbreak{}LIST"\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"incoming":~[\{"team\_id":~8, "team\_name":~"Sao~Bang"\}], "outgoing":~[]\}\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng \\
+\textit{Mỗi lời thách đấu có cờ \cmd{accepted}:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"incoming":~[\{"team\_id":~8, "team\_name":~"Sao~Bang", "accepted":~false\}], "outgoing":~[]\}\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng \\
 \midrule
 
 \normalfont Trả lời thách đấu \newline \cmd{CHALLENGE\_REPLY} &
 \{"cmd":~"CHALLENGE\_\allowbreak{}REPLY", "team\_id":~8, "accept":~true\} &
-\textit{Chấp nhận:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK", "data":~\{"lobby\_id":~3\}\}}\newline \textit{Từ chối:}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6002} không có lời thách đấu từ đội này\newline \cmd{5006} một trong hai đội đang ở sảnh chờ hoặc trong trận\newline \cmd{6001} hai đội không còn cùng số thành viên khi chấp nhận \\
+\textit{Chấp nhận thì đánh dấu lời thách đấu đã được chấp nhận, từ chối thì xóa lời thách đấu. Server báo kết quả cho đội gửi qua \cmd{CHALLENGE\_RESULT}.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}, \cmd{accept}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6002} không có lời thách đấu đang chờ trả lời từ đội này\newline \cmd{5006} một trong hai đội đang trong trận\newline \cmd{6001} hai đội không cùng số thành viên khi chấp nhận \\
 \midrule
 
 \normalfont Hủy thách đấu \newline \cmd{CHALLENGE\_CANCEL} &
 \{"cmd":~"CHALLENGE\_\allowbreak{}CANCEL", "team\_id":~8\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6002} không có lời thách đấu đã gửi tới đội này \\
+\textit{Hủy lời thách đấu đã gửi, kể cả khi đã được chấp nhận và trận chưa bắt đầu.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6002} không có lời thách đấu đã gửi tới đội này \\
 \midrule
 
-\normalfont Bắt đầu trận \newline \cmd{LOBBY\_START} &
-\{"cmd":~"LOBBY\_\allowbreak{}START"\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6004} không ở sảnh chờ\newline \cmd{6007} không phải đội chủ \\
-\midrule
-
-\normalfont Rời sảnh \newline \cmd{LOBBY\_LEAVE} &
-\{"cmd":~"LOBBY\_\allowbreak{}LEAVE"\} &
-\js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6004} không ở sảnh chờ \\
+\normalfont Bắt đầu trận \newline \cmd{CHALLENGE\_START} &
+\{"cmd":~"CHALLENGE\_\allowbreak{}START", "team\_id":~8\} &
+\textit{Đội trưởng đội gửi bắt đầu trận với đội đã chấp nhận.}\newline \js{\{"type":~"res", "code":~1000, "msg":~"OK"\}}\newline \textit{Lỗi:}\newline \cmd{2000} thiếu hoặc sai kiểu \cmd{team\_id}\newline \cmd{3001} chưa đăng nhập\newline \cmd{4002} không phải đội trưởng\newline \cmd{6002} không có lời thách đấu đã gửi và được đội này chấp nhận\newline \cmd{5006} một trong hai đội đang trong trận\newline \cmd{6001} hai đội không cùng số thành viên \\
 \midrule
 
 \normalfont Lấy trạng thái trận \newline \cmd{GAME\_STATE} &
@@ -459,15 +454,8 @@ Các thay đổi trong trận (mua, sửa, nạp đạn, tấn công, bỏ lư�
 \midrule
 
 \normalfont Thách đấu bị hủy \newline \cmd{CHALLENGE\_CANCELLED} &
+\textit{\cmd{team\_id} là ID của đội bên kia đối với người nhận.}\newline
 \{"type":~"evt", "evt":~"CHALLENGE\_\allowbreak{}CANCELLED", "data":~\{"team\_id":~5\}\} \\
-\midrule
-
-\normalfont Cập nhật sảnh \newline \cmd{LOBBY\_UPDATE} &
-\{"type":~"evt", "evt":~"LOBBY\_\allowbreak{}UPDATE", "data":~\{"lobby\_id":~3, "host":~\{"team\_id":~5, "name":~"Rong~Bay", "members":~[...]\}, "guest":~\{"team\_id":~8, "name":~"Sao~Bang", "members":~[...]\}\}\} \\
-\midrule
-
-\normalfont Đóng sảnh \newline \cmd{LOBBY\_CLOSED} &
-\{"type":~"evt", "evt":~"LOBBY\_\allowbreak{}CLOSED", "data":~\{"reason":~"LEFT"\}\} \\
 \midrule
 
 \normalfont Bắt đầu trận \newline \cmd{MATCH\_START} &
@@ -537,7 +525,7 @@ Các thay đổi trong trận (mua, sửa, nạp đạn, tấn công, bỏ lư�
 \subsection{Xử lý nhiều client đồng thời}
 Server chia công việc cho các luồng như sau:
 \begin{itemize}
-  \item \textbf{Luồng chính:} dùng \cmd{poll()} và socket non-blocking để nhận kết nối, đọc request, gửi response và xử lý timer. \cmd{poll()} cho biết socket nào đọc được, ghi được, bị lỗi hoặc đã đóng. Chỉ luồng này được sửa trạng thái phiên, đội, sảnh chờ và trận đấu nên không cần khóa dữ liệu game.
+  \item \textbf{Luồng chính:} dùng \cmd{poll()} và socket non-blocking để nhận kết nối, đọc request, gửi response và xử lý timer. \cmd{poll()} cho biết socket nào đọc được, ghi được, bị lỗi hoặc đã đóng. Chỉ luồng này được sửa trạng thái phiên, đội, lời thách đấu và trận đấu nên không cần khóa dữ liệu game.
   \item \textbf{Thread pool:} gồm 2 worker tạo bằng \cmd{pthread\_create()}, dùng để băm và kiểm tra mật khẩu. Các worker lấy việc từ hàng đợi chung được bảo vệ bằng mutex và condition variable.
   \item \textbf{Luồng ghi file:} lưu các thay đổi tài khoản và ghi log theo thứ tự FIFO để luồng chính có thể tiếp tục xử lý socket trong lúc ghi.
 \end{itemize}
@@ -580,7 +568,7 @@ Khi khởi động, server nạp tài khoản từ \cmd{data/accounts.txt} và c
 \begin{lstlisting}
 user_id|username|password_hash|salt
 \end{lstlisting}
-Server tra tài khoản trong RAM khi đăng nhập. Phiên đăng nhập, đội, lời mời, sảnh chờ và trận đấu tồn tại trong RAM trong thời gian server chạy. Khi mở rương, server chọn câu hỏi từ danh sách đã nạp.
+Server tra tài khoản trong RAM khi đăng nhập. Phiên đăng nhập, đội, lời mời, lời thách đấu và trận đấu tồn tại trong RAM trong thời gian server chạy. Khi mở rương, server chọn câu hỏi từ danh sách đã nạp.
 
 Khi đăng ký hoặc đổi mật khẩu, server xử lý lần lượt từng thay đổi tài khoản. Luồng chính tạo bản danh sách đã cập nhật từ dữ liệu hiện có trong RAM. Luồng ghi file lưu bản này vào file tạm cùng thư mục, rồi dùng \cmd{rename()} để thay file tài khoản sau khi ghi và đóng file tạm thành công. Khi nhận kết quả thành công, luồng chính cập nhật danh sách trong RAM và trả \cmd{1000}. Nếu lưu thất bại, server giữ dữ liệu cũ và trả \cmd{9001}. Luồng chính xử lý thay đổi tài khoản tiếp theo sau khi xử lý kết quả của lần ghi trước.
 
@@ -589,7 +577,7 @@ Luồng ghi file nối các bản ghi hoạt động vào \cmd{logs/server.log}.
 \subsection{Phiên đăng nhập}
 Mỗi kết nối lưu buffer nhận, buffer gửi và tài khoản đang đăng nhập. Mới kết nối thì chưa đăng nhập, chỉ dùng được \cmd{REGISTER} và \cmd{LOGIN}. \cmd{LOGIN} thành công gắn tài khoản vào kết nối, gọi là một \emph{phiên}; \cmd{LOGOUT} hủy phiên nhưng giữ kết nối.
 
-Mỗi kết nối chỉ đăng nhập 1 tài khoản (\cmd{LOGIN} lần nữa nhận \cmd{3002}), và mỗi tài khoản chỉ có 1 phiên: đăng nhập đúng mật khẩu ở client khác thì kết nối cũ nhận \cmd{FORCE\_LOGOUT} (\cmd{REPLACED}) rồi bị đóng, còn người chơi vẫn giữ nguyên đội, sảnh chờ hoặc trận. Đăng nhập lại khi trận còn diễn ra thì server gửi thêm \cmd{MATCH\_RESUME} để đưa người chơi về trận.
+Mỗi kết nối chỉ đăng nhập 1 tài khoản (\cmd{LOGIN} lần nữa nhận \cmd{3002}), và mỗi tài khoản chỉ có 1 phiên: đăng nhập đúng mật khẩu ở client khác thì kết nối cũ nhận \cmd{FORCE\_LOGOUT} (\cmd{REPLACED}) rồi bị đóng, còn người chơi vẫn giữ nguyên đội hoặc trận. Đăng nhập lại khi trận còn diễn ra thì server gửi thêm \cmd{MATCH\_RESUME} để đưa người chơi về trận.
 
 Mỗi kết nối chỉ có 1 request đang chờ response, và response luôn được gửi trước các event do chính request đó tạo ra. Client phân biệt hai loại bằng trường \cmd{type}: \cmd{res} là response của request đang chờ, \cmd{evt} là event.
 
@@ -651,6 +639,6 @@ Server phát hiện kết nối đã đóng hoặc lỗi qua kết quả của \
 
 Phiên kết thúc khi client đăng xuất hoặc đóng kết nối, mất mạng, gửi message quá dài, nhận quá chậm làm buffer gửi vượt 256 KB, bị thay phiên hoặc server tắt. Hai trường hợp cuối, client nhận \cmd{FORCE\_LOGOUT} (\cmd{REPLACED} hoặc \cmd{SHUTDOWN}) trước khi kết nối bị đóng và không tự kết nối lại; các trường hợp mất kết nối khác thì client tự kết nối lại và gửi lại \cmd{LOGIN}.
 
-Sau khi hủy phiên, server dọn dẹp theo vị trí của người chơi: hủy các lời mời và lời xin vào; tự rời đội nếu đội đang rảnh; đóng sảnh chờ nếu đang ở sảnh (\cmd{LOBBY\_CLOSED}); nếu đang trong trận thì giữ tàu ở trạng thái offline (\cmd{MATCH\_UPDATE} với \cmd{action} là \cmd{DISCONNECTED}) và bỏ qua lượt của người đó. Cả đội offline liên tục 120 giây thì đội đó thua.
+Sau khi hủy phiên, server hủy các lời mời và lời xin vào của người chơi. Nếu đội đang rảnh, người chơi tự rời đội và server hủy các lời thách đấu liên quan vì thành viên đã thay đổi. Nếu đang trong trận, server giữ tàu ở trạng thái offline (\cmd{MATCH\_UPDATE} với \cmd{action} là \cmd{DISCONNECTED}) và bỏ qua lượt của người đó. Cả đội offline liên tục 120 giây thì đội đó thua.
 
 \end{document}
